@@ -26,7 +26,7 @@ echo " Starting Full Application Tart VM E2E Verification: ${VM_NAME}"
 echo "=========================================================="
 
 # 1. Preflight checks
-if ! tart list | grep -q "^${VM_NAME}\$"; then
+if ! tart list | awk '{print $2}' | grep -q "^${VM_NAME}\$"; then
     echo "ERROR: VM '${VM_NAME}' not found in Tart registry." >&2
     echo "Please ensure 'tart clone' completed successfully." >&2
     exit 1
@@ -68,24 +68,33 @@ if [[ -z "${VM_IP}" ]]; then
     exit 1
 fi
 
+SSH_KEY="${HOME}/.ssh/id_ed25519_tart"
+SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+SSH_CMD="ssh ${SSH_OPTS} admin@${VM_IP}"
+
 # 3. SSH Connectivity & Guest Environment
 echo "[3/9] Testing SSH connectivity and system metadata..."
 ssh-keyscan -H "${VM_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 admin@"${VM_IP}" "
+${SSH_CMD} "
     echo '=== Guest macOS System Info ==='
     sw_vers
     uname -m
 "
 
-# 4. GUI Session / WindowServer Check
-echo "[4/9] Verifying GUI session and WindowServer inside Guest..."
-ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+# 4. GUI Session / WindowServer & Chrome Check
+echo "[4/9] Verifying GUI session and Headful Chrome inside Guest..."
+${SSH_CMD} "
     if pgrep WindowServer >/dev/null; then
         echo 'WindowServer is running. GUI desktop session confirmed.'
     else
         echo 'ERROR: WindowServer is not running in guest!' >&2
         exit 1
+    fi
+    if [[ -d '/Applications/Google Chrome.app' ]]; then
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --version
+    else
+        echo 'WARNING: Google Chrome.app not found in /Applications'
     fi
 "
 
@@ -105,9 +114,9 @@ done
 if [[ "${WORKER_ONLINE}" != "true" ]]; then
     echo "Worker API not yet responding on guest port ${WORKER_PORT}."
     echo "Attempting to launch worker daemon in guest session..."
-    ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+    ${SSH_CMD} "
         cd /Users/admin/typesafe-computer-use 2>/dev/null || cd /Users/admin
-        nohup uv run python -m typesafe_computer_use.worker.server --host 0.0.0.0 --port ${WORKER_PORT} > /tmp/worker.log 2>&1 &
+        WORKER_AUTH_TOKEN='${AUTH_TOKEN}' nohup .venv/bin/python3 -m typesafe_computer_use.worker.server --host 0.0.0.0 --port ${WORKER_PORT} > /tmp/worker.log 2>&1 &
     "
     sleep 5
     if ! curl -s -f "http://${VM_IP}:${WORKER_PORT}/healthz" >/dev/null 2>&1; then
@@ -119,7 +128,7 @@ fi
 
 # 6. CDP Loopback Binding Verification
 echo "[6/9] Verifying CDP loopback binding inside Guest (strictly 127.0.0.1)..."
-ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+${SSH_CMD} "
     # Check that any CDP port is bound strictly to 127.0.0.1 and not 0.0.0.0
     PUBLIC_CDP=\$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | grep -E '\*:922[0-9]|\*:0' || true)
     if [[ -n \"\${PUBLIC_CDP}\" ]]; then
