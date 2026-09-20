@@ -6,30 +6,122 @@ import base64
 import io
 import json
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
 import anthropic
+import openai
 from PIL import Image
 
-from .config import answer_model, writer_model
+from .config import answer_model, openai_api_key, openai_base_url, writer_model, writer_provider
 from .dates import now_context
 from .models import Item, Screen
 from .perception import near_field
 
-
-def make_writer() -> anthropic.Anthropic | None:
-    """A client, or None when no Anthropic credentials resolve (the SDK only checks on first request)."""
-    client = anthropic.Anthropic()
-    if client.api_key or getattr(client, "auth_token", None):
-        return client
-    return None
-
-
 ANSWER_IMAGE_EDGE = 1568  # the longest edge a vision model reads without shrinking the image itself
 
 
+class OpenAIWriter:
+    """Client adapter for OpenAI-compatible proxies (e.g. codex-openai-proxy)."""
+
+    def __init__(self, client: openai.OpenAI):
+        self.client = client
+
+    def structured(
+        self,
+        system: str,
+        packet: dict,
+        properties: dict,
+        max_tokens: int,
+        model: str | None = None,
+        image: Image.Image | None = None,
+    ) -> dict:
+        """Query OpenAI chat completions, embedding instructions for Codex backend compatibility."""
+        target_model = model or writer_model()
+        schema_instruction = (
+            f"\n\nYou must reply strictly with a valid JSON object matching this schema properties: {json.dumps(properties)}.\n"
+            "Output valid JSON only. Do not wrap in markdown or code fences."
+        )
+        prompt_text = f"[Instructions]\n{system}\n\n[Input Data]\n{json.dumps(packet)}{schema_instruction}"
+
+        # Codex backend on ChatGPT rejects role: "system", so instructions are included in user content
+        if image is not None:
+            shrunk = image.convert("RGB")
+            shrunk.thumbnail((ANSWER_IMAGE_EDGE, ANSWER_IMAGE_EDGE))
+            buffer = io.BytesIO()
+            shrunk.save(buffer, format="PNG")
+            data = base64.b64encode(buffer.getvalue()).decode()
+            content: list[dict] = [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}},
+                {"type": "text", "text": prompt_text},
+            ]
+        else:
+            content = [{"type": "text", "text": prompt_text}]
+
+        response = self.client.chat.completions.create(
+            model=target_model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": content}],
+        )
+
+        if getattr(response, "error", None):
+            error_msg = response.error.get("message") if isinstance(response.error, dict) else str(response.error)
+            raise RuntimeError(f"OpenAI proxy error: {error_msg}")
+
+        if not response.choices or not response.choices[0].message:
+            raise RuntimeError(f"OpenAI proxy returned no choices in response: {response}")
+
+        raw_text = (response.choices[0].message.content or "").strip()
+        return _parse_json(raw_text)
+
+
+
+def _parse_json(raw: str) -> dict:
+    """Extract and parse JSON object safely from raw model output."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        # Fallback: extract the outermost JSON object
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
+
+
+def make_writer() -> Any | None:
+    """Create a writer client: OpenAI-compatible proxy or Anthropic client."""
+    provider = writer_provider()
+    if provider == "openai":
+        try:
+            client = openai.OpenAI(base_url=openai_base_url(), api_key=openai_api_key())
+            return OpenAIWriter(client)
+        except Exception as e:
+            print(f"Warning: failed to initialize OpenAI client: {e}")
+            return None
+
+    if provider == "anthropic":
+        try:
+            client = anthropic.Anthropic()
+            if client.api_key or getattr(client, "auth_token", None):
+                return client
+        except Exception:
+            pass
+
+    return None
+
+
 def _structured(
-    writer: anthropic.Anthropic,
+    writer: Any,
     system: str,
     packet: dict,
     properties: dict,
@@ -37,6 +129,10 @@ def _structured(
     model: str | None = None,
     image: Image.Image | None = None,
 ) -> dict:
+    if isinstance(writer, OpenAIWriter):
+        return writer.structured(system, packet, properties, max_tokens, model=model, image=image)
+
+    # Anthropic or mock fake writer
     content: list[dict] = [{"type": "text", "text": json.dumps(packet)}]
     if image is not None:
         content.insert(0, _image_block(image))
@@ -60,6 +156,7 @@ def _structured(
     return json.loads("".join(b.text for b in response.content if b.type == "text"))
 
 
+
 def _image_block(image: Image.Image) -> dict:
     """The capture as a PNG the model can read. PNG because screen text does not survive JPEG well."""
     shrunk = image.convert("RGB")
@@ -70,7 +167,7 @@ def _image_block(image: Image.Image) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
 
 
-def compose_text(writer: anthropic.Anthropic, goal: str, screen: Screen, items: list[Item], history: list[str]) -> str:
+def compose_text(writer: Any, goal: str, screen: Screen, items: list[Item], history: list[str]) -> str:
     """The exact string to type into the focused field. Empty means the writer declined."""
     packet = {
         "goal": goal,
@@ -101,7 +198,7 @@ def valid_url(url: str) -> bool:
     return parsed.scheme == "https" and "." in parsed.netloc and not any(ch.isspace() for ch in url)
 
 
-def compose_url(writer: anthropic.Anthropic, goal: str, history: list[str]) -> str:
+def compose_url(writer: Any, goal: str, history: list[str]) -> str:
     """The URL to open for this goal. Empty means no sensible site, or an invalid proposal."""
     data = _structured(
         writer,
@@ -124,7 +221,7 @@ class Answer:
 
 
 def compose_answer(
-    writer: anthropic.Anthropic, goal: str, screen: Screen, items: list[Item], history: list[str], stopped: str
+    writer: Any, goal: str, screen: Screen, items: list[Item], history: list[str], stopped: str
 ) -> Answer:
     """What to tell the user now that the run is over: the result when the screen holds it, where things stand when not.
 

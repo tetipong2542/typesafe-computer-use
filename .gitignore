@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 .env
 dist/
+*.db
+*.db-shm
+*.db-wal

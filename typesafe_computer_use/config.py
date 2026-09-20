@@ -25,7 +25,24 @@ SITES: dict[str, str] = {
     "notion": "https://www.notion.so/",
     "slack": "https://app.slack.com/",
     "typesafe_console": "https://console.typesafe.ai/",
+    "youtube": "https://www.youtube.com/",
 }
+
+# Supported model presets for OpenAI-compatible proxies
+POPULAR_MODELS: dict[str, str] = {
+    # ChatGPT Backend (via Codex authentication):
+    "gpt-5.6-sol": "Flagship Sol model with advanced reasoning and vision (default)",
+    "gpt-5.5": "Fast and lightweight model on ChatGPT backend",
+    # Standard OpenAI / OpenRouter endpoints:
+    "gpt-4o": "Standard balanced model for external OpenAI API",
+    "gpt-4o-mini": "Ultra fast and cost-efficient model",
+    "gpt-4.1-mini": "Lightweight and efficient model",
+    "o3-mini": "High-speed reasoning model",
+}
+
+
+DEFAULT_OPENAI_MODEL = "gpt-5.6-sol"
+DEFAULT_OPENAI_BASE_URL = "http://localhost:8888/v1"
 
 
 def load_dotenv(path: Path) -> None:
@@ -40,17 +57,44 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+def writer_provider() -> str:
+    """Determine the active writer provider: 'openai', 'anthropic', or 'none'."""
+    explicit = os.environ.get("WRITER_PROVIDER", "").lower()
+    if explicit in ("openai", "anthropic"):
+        return explicit
+    if os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    return "openai"
+
+
+def openai_base_url() -> str:
+    """Get the OpenAI-compatible proxy base URL."""
+    return os.environ.get("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
+
+
+def openai_api_key() -> str:
+    """Get the OpenAI-compatible proxy API key."""
+    return os.environ.get("OPENAI_API_KEY", "test")
+
+
 def browser() -> str:
     return os.environ.get("CLICKER_BROWSER", DEFAULT_BROWSER)
 
 
 def writer_model() -> str:
-    return os.environ.get("CLICKER_WRITER_MODEL", DEFAULT_WRITER_MODEL)
+    if "CLICKER_WRITER_MODEL" in os.environ:
+        return os.environ["CLICKER_WRITER_MODEL"]
+    return DEFAULT_OPENAI_MODEL if writer_provider() == "openai" else DEFAULT_WRITER_MODEL
 
 
 def answer_model() -> str:
-    return os.environ.get("CLICKER_ANSWER_MODEL", DEFAULT_ANSWER_MODEL)
+    if "CLICKER_ANSWER_MODEL" in os.environ:
+        return os.environ["CLICKER_ANSWER_MODEL"]
+    return DEFAULT_OPENAI_MODEL if writer_provider() == "openai" else DEFAULT_ANSWER_MODEL
 
 
 def email() -> str | None:
     return os.environ.get("CLICKER_EMAIL") or None
+

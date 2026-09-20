@@ -49,10 +49,26 @@ def accessibility_trusted() -> bool:
     return bool(AS.AXIsProcessTrusted())
 
 
+# ------------------------------------------------------------------ input lock & exclusive takeover
+
+_INPUT_LOCKED: bool = False
+
+
+def set_input_lock(locked: bool) -> None:
+    global _INPUT_LOCKED
+    _INPUT_LOCKED = locked
+
+
+def is_input_locked() -> bool:
+    return _INPUT_LOCKED
+
+
 # ------------------------------------------------------------------ input
 
 
 def _post(event) -> None:
+    if _INPUT_LOCKED:
+        return
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
     time.sleep(0.04)
 
@@ -225,6 +241,8 @@ AX_PRESS = "AXPress"
 
 def ax_press(ref) -> bool:
     """Send AXPress to an element."""
+    if _INPUT_LOCKED:
+        return False
     try:
         return AS.AXUIElementPerformAction(ref, AX_PRESS) == 0
     except Exception:
@@ -233,6 +251,8 @@ def ax_press(ref) -> bool:
 
 def ax_focus(ref) -> bool:
     """Give an element the keyboard focus."""
+    if _INPUT_LOCKED:
+        return False
     try:
         return AS.AXUIElementSetAttributeValue(ref, AS.kAXFocusedAttribute, True) == 0
     except Exception:
@@ -241,6 +261,8 @@ def ax_focus(ref) -> bool:
 
 def ax_set_value(ref, text: str) -> bool:
     """Write an element's value. A read-only or unwilling element reports an error."""
+    if _INPUT_LOCKED:
+        return False
     try:
         return AS.AXUIElementSetAttributeValue(ref, AS.kAXValueAttribute, text) == 0
     except Exception:
