@@ -96,6 +96,31 @@ class WorkerDatabase:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id, event_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sse_tickets_task ON sse_tickets(task_id, ticket_id);")
+
+            # Migration for extended event columns
+            existing_cols = {col["name"] for col in conn.execute("PRAGMA table_info(events);").fetchall()}
+            new_cols = [
+                ("interaction_mode", "TEXT DEFAULT 'visual_grounded'"),
+                ("verification_mode", "TEXT DEFAULT 'visual_grounded'"),
+                ("adapter", "TEXT DEFAULT 'VisualComputerUseAdapter'"),
+                ("capability_snapshot_id", "TEXT"),
+                ("router_reason", "TEXT"),
+                ("attempted_modes", "TEXT"),
+                ("fallback_from", "TEXT"),
+                ("fallback_to", "TEXT"),
+                ("fallback_reason", "TEXT"),
+                ("tool_name", "TEXT"),
+                ("origin", "TEXT"),
+                ("side_effect_state", "TEXT DEFAULT 'not_started'"),
+                ("duration_ms", "REAL"),
+                ("input_tokens", "INTEGER DEFAULT 0"),
+                ("output_tokens", "INTEGER DEFAULT 0"),
+                ("estimated_cost", "REAL DEFAULT 0.0"),
+            ]
+            for col_name, col_type in new_cols:
+                if col_name not in existing_cols:
+                    conn.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type};")
+
             conn.commit()
 
     def recover_interrupted_tasks(self) -> list[str]:
@@ -216,8 +241,12 @@ class WorkerDatabase:
                 INSERT INTO events (
                     event_id, task_id, run_id, step, phase, timestamp, state,
                     action, target, confidence, policy_decision, screenshot_id,
-                    result, error, extra_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    result, error, extra_json, created_at,
+                    interaction_mode, verification_mode, adapter, capability_snapshot_id,
+                    router_reason, attempted_modes, fallback_from, fallback_to,
+                    fallback_reason, tool_name, origin, side_effect_state,
+                    duration_ms, input_tokens, output_tokens, estimated_cost
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
@@ -236,6 +265,22 @@ class WorkerDatabase:
                     event.error,
                     json.dumps(event.extra),
                     now,
+                    event.interaction_mode,
+                    event.verification_mode,
+                    event.adapter,
+                    event.capability_snapshot_id,
+                    event.router_reason,
+                    json.dumps(event.attempted_modes),
+                    event.fallback_from,
+                    event.fallback_to,
+                    event.fallback_reason,
+                    event.tool_name,
+                    event.origin,
+                    event.side_effect_state,
+                    event.duration_ms,
+                    event.input_tokens,
+                    event.output_tokens,
+                    event.estimated_cost,
                 ),
             )
             conn.commit()
@@ -275,6 +320,22 @@ class WorkerDatabase:
                         screenshot_id=r["screenshot_id"],
                         result=r["result"],
                         error=r["error"],
+                        interaction_mode=r["interaction_mode"] or "visual_grounded",
+                        verification_mode=r["verification_mode"] or "visual_grounded",
+                        adapter=r["adapter"] or "VisualComputerUseAdapter",
+                        capability_snapshot_id=r["capability_snapshot_id"],
+                        router_reason=r["router_reason"],
+                        attempted_modes=json.loads(r["attempted_modes"] or "[]"),
+                        fallback_from=r["fallback_from"],
+                        fallback_to=r["fallback_to"],
+                        fallback_reason=r["fallback_reason"],
+                        tool_name=r["tool_name"],
+                        origin=r["origin"],
+                        side_effect_state=r["side_effect_state"] or "not_started",
+                        duration_ms=r["duration_ms"],
+                        input_tokens=r["input_tokens"] or 0,
+                        output_tokens=r["output_tokens"] or 0,
+                        estimated_cost=r["estimated_cost"] or 0.0,
                         extra=json.loads(r["extra_json"] or "{}"),
                     )
                 )

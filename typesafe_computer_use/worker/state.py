@@ -133,6 +133,23 @@ class TaskEvent:
     screenshot_id: str | None = None
     result: str | None = None
     error: str | None = None
+    # Extended Hybrid Interaction fields
+    interaction_mode: str = "visual_grounded"
+    verification_mode: str = "visual_grounded"
+    adapter: str = "VisualComputerUseAdapter"
+    capability_snapshot_id: str | None = None
+    router_reason: str | None = None
+    attempted_modes: list[str] = field(default_factory=list)
+    fallback_from: str | None = None
+    fallback_to: str | None = None
+    fallback_reason: str | None = None
+    tool_name: str | None = None
+    origin: str | None = None
+    side_effect_state: str = "not_started"
+    duration_ms: float | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
