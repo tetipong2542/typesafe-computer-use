@@ -1,6 +1,7 @@
 """Integration tests for FastAPI Worker API endpoints."""
 
 import os
+import re
 from unittest.mock import patch
 
 import pytest
@@ -267,3 +268,33 @@ def test_create_and_manage_task(tmp_path):
         assert reset_res.status_code == 200
         assert reset_res.json()["status"] == "reset"
         assert reset_res.json()["input_locked"] is False
+
+
+def test_takeover_vnc_uri_strictly_omits_credentials(tmp_path):
+    """Assert that takeover vnc_uri strictly omits credentials and follows clean URI format."""
+    test_svc = setup_test_service(tmp_path)
+    with patch("typesafe_computer_use.worker.server.service", test_svc):
+        client = TestClient(app)
+        create_res = client.post("/tasks", json={"goal": "test vnc uri security"}, headers=AUTH_HEADERS)
+        assert create_res.status_code == 200
+        task_id = create_res.json()["task_id"]
+
+        test_svc.db.update_task(task_id, state=TaskState.PAUSED)
+        res = client.post(f"/tasks/{task_id}/takeover", headers=AUTH_HEADERS)
+        assert res.status_code == 200
+        takeover_data = res.json()
+        vnc_uri = takeover_data["vnc_uri"]
+
+        # 1. Assert regex: absolutely no embedded password component (:password@)
+        assert re.search(r":[^/@]+@", vnc_uri) is None
+
+        # 2. Assert clean VNC URI format
+        assert re.match(r"^vnc://([a-zA-Z0-9_-]+@)?[a-zA-Z0-9.-]+(:[0-9]+)?$", vnc_uri) is not None
+
+        # 3. Assert no passwords appear in emitted events or logs
+        events = test_svc.db.get_events(task_id)
+        for evt in events:
+            evt_str = str(evt)
+            assert "admin:admin" not in evt_str
+            assert re.search(r":[^/@]+@", evt_str) is None
+

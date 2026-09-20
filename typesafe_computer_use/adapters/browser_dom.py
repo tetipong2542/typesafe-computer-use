@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from playwright.async_api import Locator, Page
@@ -51,9 +53,18 @@ class BrowserDOMAdapter(InteractionAdapter):
         self,
         session_manager: BrowserSessionManager | None = None,
         execution_gate: ExecutionGate | None = None,
+        step_barrier: Callable[[str], Awaitable[None] | Any] | None = None,
     ) -> None:
         self.session_manager = session_manager or BrowserSessionManager()
         self.execution_gate = execution_gate or ExecutionGate.get_instance()
+        self.step_barrier = step_barrier
+
+    async def _call_barrier(self, phase: str) -> None:
+        """Invoke synchronization step barrier hook if configured, awaiting if async."""
+        if self.step_barrier is not None:
+            res = self.step_barrier(phase)
+            if inspect.isawaitable(res):
+                await res
 
     @property
     def mode(self) -> InteractionMode:
@@ -140,6 +151,8 @@ class BrowserDOMAdapter(InteractionAdapter):
 
         side_effect = SideEffectState.NOT_STARTED
         try:
+            await self._call_barrier("before_dispatch")
+
             page = await self.session_manager.get_active_page()
             expected_epoch = args.get("navigation_epoch")
             current_epoch = self.session_manager.get_navigation_epoch(page)
@@ -163,26 +176,29 @@ class BrowserDOMAdapter(InteractionAdapter):
             timeout_ms = int(request.timeout_seconds * 1000)
             res_data: Any = None
 
+            side_effect = SideEffectState.UNKNOWN
+            await self._call_barrier("request_dispatched")
+
             if action == "navigate":
                 url = args.get("url") or target
-                side_effect = SideEffectState.UNKNOWN
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"url": page.url, "title": await page.title()}
 
             elif action == "click":
                 locator = await self.resolve_locator(page, target, args)
-                side_effect = SideEffectState.UNKNOWN
                 await locator.click(timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"clicked": target}
 
             elif action == "fill":
                 text = args.get("text", "")
                 locator = await self.resolve_locator(page, target, args)
-                side_effect = SideEffectState.UNKNOWN
                 await locator.fill(text, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 # Redact text in returned data if sensitive target or sensitive payload
                 is_sensitive = bool(
                     SENSITIVE_ATTR_PATTERN.search(target)
@@ -194,24 +210,24 @@ class BrowserDOMAdapter(InteractionAdapter):
             elif action == "select_option":
                 value = args.get("value") or args.get("label") or ""
                 locator = await self.resolve_locator(page, target, args)
-                side_effect = SideEffectState.UNKNOWN
                 await locator.select_option(value=value, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"selected": value, "target": target}
 
             elif action == "press":
                 key = args.get("key") or target
-                side_effect = SideEffectState.UNKNOWN
                 await page.keyboard.press(key)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"pressed": key}
 
             elif action == "scroll":
                 delta_x = args.get("delta_x", 0)
                 delta_y = args.get("delta_y", 300)
-                side_effect = SideEffectState.UNKNOWN
                 await page.mouse.wheel(delta_x, delta_y)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"scroll_x": delta_x, "scroll_y": delta_y}
 
             elif action == "wait_for":
@@ -219,14 +235,18 @@ class BrowserDOMAdapter(InteractionAdapter):
                 state = args.get("state", "visible")
                 await locator.wait_for(state=state, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
                 res_data = {"wait_for": target, "state": state}
 
             elif action == "extract_text":
                 res_data = await self.extract_sanitized_dom(page)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
+                await self._call_barrier("side_effect_committed")
 
             else:
                 raise BrowserError(f"Unsupported action: {action}")
+
+            await self._call_barrier("response_released")
 
             duration_ms = (time.time() - start_time) * 1000
             return InteractionResult(

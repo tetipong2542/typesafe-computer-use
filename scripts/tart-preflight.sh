@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# e2e-tart-test.sh: Automated E2E verification for Tart macOS VM Worker
+# tart-preflight.sh: Preflight verification for Tart macOS VM Worker
 # ==============================================================================
 
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 VM_NAME="${1:-macos-worker}"
 
 echo "=========================================================="
-echo " Starting Automated E2E Verification for Tart VM: ${VM_NAME}"
+echo " Starting Preflight Verification for Tart VM: ${VM_NAME}"
 echo "=========================================================="
 
 # 1. Check if VM exists
@@ -19,19 +19,27 @@ fi
 
 echo "[1/5] VM '${VM_NAME}' is present in Tart registry."
 
-# 2. Launch VM in background
-echo "[2/5] Starting VM in headless background mode..."
-tart run "${VM_NAME}" --no-graphics &
-VM_PID=$!
+# 2. Check if VM is already running or launch in background
+VM_STARTED_BY_SCRIPT=false
+if ! tart ip "${VM_NAME}" >/dev/null 2>&1; then
+    echo "[2/5] Starting VM in headless background mode..."
+    tart run "${VM_NAME}" --no-graphics &
+    VM_PID=$!
+    VM_STARTED_BY_SCRIPT=true
+else
+    echo "[2/5] VM '${VM_NAME}' is already running."
+fi
 
 cleanup() {
-    echo "Cleaning up VM process..."
-    tart stop "${VM_NAME}" || true
+    if [[ "${VM_STARTED_BY_SCRIPT}" == "true" ]]; then
+        echo "Cleaning up VM process started by preflight..."
+        tart stop "${VM_NAME}" || true
+    fi
 }
 trap cleanup EXIT
 
 # 3. Wait for IP Address
-echo "[3/5] Waiting for VM to boot and acquire IP address..."
+echo "[3/5] Waiting for VM to acquire IP address..."
 VM_IP=""
 for i in {1..30}; do
     if VM_IP=$(tart ip "${VM_NAME}" 2>/dev/null) && [[ -n "${VM_IP}" ]]; then
@@ -63,11 +71,11 @@ ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 admin@"${VM_IP}" "
 echo "[5/5] Testing VNC port 5900 availability for Human Takeover..."
 if nc -z -w 5 "${VM_IP}" 5900 2>/dev/null; then
     echo "VNC port 5900 is listening and accessible."
-    echo "Takeover URI verified: vnc://admin:admin@${VM_IP}:5900"
+    echo "Takeover URI verified: vnc://admin@${VM_IP}"
 else
     echo "WARNING: VNC port 5900 is not yet reachable (Screen Sharing may need to be enabled in System Settings)."
 fi
 
 echo "=========================================================="
-echo " Tart VM E2E Automated Verification: SUCCESS"
+echo " Tart VM Preflight Verification: SUCCESS"
 echo "=========================================================="

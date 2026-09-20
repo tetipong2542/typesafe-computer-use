@@ -83,8 +83,51 @@ def test_phase1_pre_dispatch_cancellation(tmp_path: Path):
 
 
 @pytest.mark.browser
+def test_barrier_pre_dispatch_cancellation(tmp_path: Path):
+    """Synchronization barrier: Cancellation triggered at before_dispatch strictly yields NOT_STARTED."""
+    async def _run():
+        gate = ExecutionGate.get_instance()
+        cfg = BrowserSessionConfig(
+            user_data_dir=tmp_path / "profile_pre_barrier",
+            cdp_port=0,
+            headless=True,
+        )
+        mgr = BrowserSessionManager(cfg)
+        try:
+            page = await mgr.start_or_attach(auto_launch=True)
+            await page.goto(FIXTURE_PATH.resolve().as_uri())
+
+            async def barrier(phase: str):
+                if phase == "before_dispatch":
+                    await gate.trigger_takeover()
+
+            adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate, step_barrier=barrier)
+
+            req = InteractionRequest(
+                mode=InteractionMode.BROWSER_DOM,
+                action="click",
+                target="#delayed-btn",
+                execution_id="exec_pre_barrier",
+                context={"navigation_epoch": 1},
+            )
+
+            res = await adapter.execute(req)
+            assert res.side_effect_state == SideEffectState.NOT_STARTED
+            assert res.error == "Action cancelled by Execution Gate"
+
+            # Confirm zero DOM mutations occurred
+            status_text = await page.locator("#status").inner_text()
+            assert status_text == "pending"
+
+        finally:
+            await mgr.close()
+
+    asyncio.run(_run())
+
+
+@pytest.mark.browser
 def test_phase2_mid_dispatch_cancellation(tmp_path: Path):
-    """Phase 2: Cancellation during active CDP call results in UNKNOWN side effect state."""
+    """Phase 2: Cancellation during active CDP call results strictly in UNKNOWN side effect state."""
     async def _run():
         gate = ExecutionGate.get_instance()
         cfg = BrowserSessionConfig(
@@ -97,7 +140,12 @@ def test_phase2_mid_dispatch_cancellation(tmp_path: Path):
             page = await mgr.start_or_attach(auto_launch=True)
             await page.goto(FIXTURE_PATH.resolve().as_uri())
 
-            adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate)
+            async def barrier(phase: str):
+                if phase == "request_dispatched":
+                    # Mid-dispatch takeover triggered deterministically right when request is dispatched
+                    await gate.trigger_takeover()
+
+            adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate, step_barrier=barrier)
 
             req = InteractionRequest(
                 mode=InteractionMode.BROWSER_DOM,
@@ -107,15 +155,9 @@ def test_phase2_mid_dispatch_cancellation(tmp_path: Path):
                 context={"navigation_epoch": 1},
             )
 
-            # Launch execute in background task
-            exec_task = asyncio.create_task(adapter.execute(req))
-            await asyncio.sleep(0.01)  # allow task to reach in-flight registration
-
-            # Mid-dispatch takeover
-            await gate.trigger_takeover()
-
-            res = await exec_task
-            assert res.side_effect_state in (SideEffectState.UNKNOWN, SideEffectState.NOT_STARTED)
+            res = await adapter.execute(req)
+            # Deterministically assert UNKNOWN because action was dispatched before cancellation
+            assert res.side_effect_state == SideEffectState.UNKNOWN
             assert res.error == "Action cancelled by Execution Gate"
 
         finally:
@@ -126,7 +168,7 @@ def test_phase2_mid_dispatch_cancellation(tmp_path: Path):
 
 @pytest.mark.browser
 def test_phase3_post_event_pre_response_cancellation(tmp_path: Path):
-    """Phase 3: Post DOM event but pre-adapter response cancellation prevents duplicate execution."""
+    """Phase 3: Post DOM event cancellation at side_effect_committed retains CONFIRMED_SUCCESS without duplicate."""
     async def _run():
         gate = ExecutionGate.get_instance()
         cfg = BrowserSessionConfig(
@@ -139,7 +181,11 @@ def test_phase3_post_event_pre_response_cancellation(tmp_path: Path):
             page = await mgr.start_or_attach(auto_launch=True)
             await page.goto(FIXTURE_PATH.resolve().as_uri())
 
-            adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate)
+            async def barrier(phase: str):
+                if phase == "side_effect_committed":
+                    await gate.trigger_takeover()
+
+            adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate, step_barrier=barrier)
 
             req = InteractionRequest(
                 mode=InteractionMode.BROWSER_DOM,
@@ -150,6 +196,7 @@ def test_phase3_post_event_pre_response_cancellation(tmp_path: Path):
             )
 
             res = await adapter.execute(req)
+            # Side effect was committed before cancellation occurred
             assert res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS
 
             # Wait for delayed JS mutation to complete
@@ -161,6 +208,7 @@ def test_phase3_post_event_pre_response_cancellation(tmp_path: Path):
             # Verify read-only state check passes
             v_res = await adapter.verify(
                 VerificationExpectation(
+                    mode=InteractionMode.BROWSER_DOM,
                     condition="element_present",
                     target="#status",
                 )

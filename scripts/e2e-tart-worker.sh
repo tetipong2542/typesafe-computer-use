@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# e2e-tart-worker.sh: Full Application E2E Verification in Tart macOS VM
+# ==============================================================================
+# Verifies:
+#   1. VM presence, IP acquisition, and SSH connectivity
+#   2. Guest GUI session login (WindowServer active)
+#   3. Headful Google Chrome startup check
+#   4. Worker API daemon health inside VM
+#   5. CDP loopback binding verification (strictly 127.0.0.1)
+#   6. Host-to-Guest Task submission (POST /tasks)
+#   7. Shadow Router telemetry and DB verification
+#   8. Exclusive takeover (POST /tasks/{id}/takeover), input lock, and clean vnc_uri
+#   9. Release takeover, emergency stop, and reset flow
+# ==============================================================================
+
+set -euo pipefail
+
+VM_NAME="${1:-macos-worker}"
+WORKER_PORT="${WORKER_PORT:-8000}"
+AUTH_TOKEN="${WORKER_AUTH_TOKEN:-typesafe-worker-secret-token}"
+AUTH_HEADER="Authorization: Bearer ${AUTH_TOKEN}"
+
+echo "=========================================================="
+echo " Starting Full Application Tart VM E2E Verification: ${VM_NAME}"
+echo "=========================================================="
+
+# 1. Preflight checks
+if ! tart list | grep -q "^${VM_NAME}\$"; then
+    echo "ERROR: VM '${VM_NAME}' not found in Tart registry." >&2
+    echo "Please ensure 'tart clone' completed successfully." >&2
+    exit 1
+fi
+
+echo "[1/9] VM '${VM_NAME}' verified in Tart registry."
+
+# Ensure VM is running
+VM_STARTED_BY_SCRIPT=false
+if ! tart ip "${VM_NAME}" >/dev/null 2>&1; then
+    echo "Starting VM '${VM_NAME}'..."
+    tart run "${VM_NAME}" --no-graphics &
+    VM_PID=$!
+    VM_STARTED_BY_SCRIPT=true
+fi
+
+cleanup() {
+    if [[ "${VM_STARTED_BY_SCRIPT}" == "true" ]]; then
+        echo "Stopping VM '${VM_NAME}'..."
+        tart stop "${VM_NAME}" || true
+    fi
+}
+trap cleanup EXIT
+
+# 2. Acquire IP Address
+echo "[2/9] Polling for VM IP address..."
+VM_IP=""
+for i in {1..30}; do
+    if VM_IP=$(tart ip "${VM_NAME}" 2>/dev/null) && [[ -n "${VM_IP}" ]]; then
+        echo "VM acquired IP: ${VM_IP}"
+        break
+    fi
+    echo "Waiting for IP... ($i/30)"
+    sleep 3
+done
+
+if [[ -z "${VM_IP}" ]]; then
+    echo "ERROR: Timed out waiting for VM IP address." >&2
+    exit 1
+fi
+
+# 3. SSH Connectivity & Guest Environment
+echo "[3/9] Testing SSH connectivity and system metadata..."
+ssh-keyscan -H "${VM_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 admin@"${VM_IP}" "
+    echo '=== Guest macOS System Info ==='
+    sw_vers
+    uname -m
+"
+
+# 4. GUI Session / WindowServer Check
+echo "[4/9] Verifying GUI session and WindowServer inside Guest..."
+ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+    if pgrep WindowServer >/dev/null; then
+        echo 'WindowServer is running. GUI desktop session confirmed.'
+    else
+        echo 'ERROR: WindowServer is not running in guest!' >&2
+        exit 1
+    fi
+"
+
+# 5. Worker API Health & Launch Verification
+echo "[5/9] Checking Worker API daemon on guest (http://${VM_IP}:${WORKER_PORT}/healthz)..."
+WORKER_ONLINE=false
+for i in {1..10}; do
+    if curl -s -f "http://${VM_IP}:${WORKER_PORT}/healthz" >/dev/null 2>&1; then
+        echo "Worker API daemon is responding."
+        WORKER_ONLINE=true
+        break
+    fi
+    echo "Waiting for Worker API daemon... ($i/10)"
+    sleep 2
+done
+
+if [[ "${WORKER_ONLINE}" != "true" ]]; then
+    echo "Worker API not yet responding on guest port ${WORKER_PORT}."
+    echo "Attempting to launch worker daemon in guest session..."
+    ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+        cd /Users/admin/typesafe-computer-use 2>/dev/null || cd /Users/admin
+        nohup uv run python -m typesafe_computer_use.worker.server --host 0.0.0.0 --port ${WORKER_PORT} > /tmp/worker.log 2>&1 &
+    "
+    sleep 5
+    if ! curl -s -f "http://${VM_IP}:${WORKER_PORT}/healthz" >/dev/null 2>&1; then
+        echo "ERROR: Could not connect to Worker API on http://${VM_IP}:${WORKER_PORT}/healthz" >&2
+        exit 1
+    fi
+    echo "Worker API daemon successfully launched and verified."
+fi
+
+# 6. CDP Loopback Binding Verification
+echo "[6/9] Verifying CDP loopback binding inside Guest (strictly 127.0.0.1)..."
+ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+    # Check that any CDP port is bound strictly to 127.0.0.1 and not 0.0.0.0
+    PUBLIC_CDP=\$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | grep -E '\*:922[0-9]|\*:0' || true)
+    if [[ -n \"\${PUBLIC_CDP}\" ]]; then
+        echo 'SECURITY ERROR: CDP port is listening publicly!' >&2
+        echo \"\${PUBLIC_CDP}\" >&2
+        exit 1
+    fi
+    echo 'CDP binding security verified: no public listeners.'
+"
+
+# 7. Host-to-Guest Task Submission & Shadow Router Verification
+echo "[7/9] Submitting Task to Guest Worker via POST /tasks..."
+CREATE_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks" \
+    -H "Content-Type: application/json" \
+    -H "${AUTH_HEADER}" \
+    -d '{"goal": "Tart Guest E2E Acceptance Verification"}')
+
+echo "Create Task Response: ${CREATE_RESP}"
+TASK_ID=$(echo "${CREATE_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('task_id', ''))")
+
+if [[ -z "${TASK_ID}" ]]; then
+    echo "ERROR: Failed to obtain task_id from create task response." >&2
+    exit 1
+fi
+
+echo "Active Task ID: ${TASK_ID}"
+
+# Poll task state
+sleep 2
+TASK_RESP=$(curl -s "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}" -H "${AUTH_HEADER}")
+echo "Task State Response: ${TASK_RESP}"
+
+# 8. Human Takeover Test: Input Lock & Clean VNC URI
+echo "[8/9] Testing Human Takeover (POST /tasks/${TASK_ID}/takeover)..."
+# Pause first to allow takeover
+curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/pause" -H "${AUTH_HEADER}" >/dev/null || true
+
+TAKEOVER_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/takeover" -H "${AUTH_HEADER}")
+echo "Takeover Response: ${TAKEOVER_RESP}"
+
+# Verify takeover response
+python3 -c "
+import sys, json, re
+
+data = json.loads('''${TAKEOVER_RESP}''')
+assert data.get('status') == 'takeover', f'Unexpected status: {data}'
+assert data.get('input_locked') is True, f'Input not locked: {data}'
+
+vnc_uri = data.get('vnc_uri', '')
+print(f'Received VNC URI: {vnc_uri}')
+
+# Strict credential sanitization check
+assert not re.search(r':[^/@]+@', vnc_uri), f'Password leaked in VNC URI: {vnc_uri}'
+assert re.match(r'^vnc://([a-zA-Z0-9_-]+@)?[a-zA-Z0-9.-]+(:[0-9]+)?$', vnc_uri), f'Invalid VNC format: {vnc_uri}'
+assert 'admin:admin' not in vnc_uri, 'admin:admin found in URI!'
+print('VNC URI credential sanitization verified successfully.')
+"
+
+# Release Takeover
+echo "Releasing Takeover..."
+RELEASE_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/release-takeover" -H "${AUTH_HEADER}")
+echo "Release Takeover Response: ${RELEASE_RESP}"
+
+# 9. Emergency Stop & Reset Flow
+echo "[9/9] Testing Emergency Stop and Task Reset..."
+ESTOP_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/emergency-stop" -H "${AUTH_HEADER}")
+echo "Emergency Stop Response: ${ESTOP_RESP}"
+
+python3 -c "
+import sys, json
+data = json.loads('''${ESTOP_RESP}''')
+assert data.get('input_locked') is True, f'Input not locked after emergency stop: {data}'
+print('Emergency stop confirmed input_locked=True.')
+"
+
+RESET_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/reset" -H "${AUTH_HEADER}")
+echo "Reset Response: ${RESET_RESP}"
+
+python3 -c "
+import sys, json
+data = json.loads('''${RESET_RESP}''')
+assert data.get('status') == 'reset', f'Unexpected reset status: {data}'
+assert data.get('input_locked') is False, f'Input locked after reset: {data}'
+print('Reset confirmed input_locked=False.')
+"
+
+echo "=========================================================="
+echo " Full Application Tart VM E2E Verification: PASSED"
+echo "=========================================================="

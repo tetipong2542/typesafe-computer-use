@@ -121,14 +121,17 @@ class ExecutionGate:
             except Exception as e:
                 logger.warning("Error running cancellation callback: %s", e)
 
-        # 3. Cancel registered asyncio tasks
-        tasks = [t for t in self._in_flight_tasks.values() if not t.done()]
+        # 3. Cancel registered asyncio tasks (excluding current_task from gather to prevent self-deadlock)
+        current_task = asyncio.current_task()
+        self_in_flight = any(t is current_task for t in self._in_flight_tasks.values())
+
+        tasks = [t for t in self._in_flight_tasks.values() if not t.done() and t is not current_task]
         self._in_flight_tasks.clear()
         for t in tasks:
             t.cancel()
             cancelled_count += 1
 
-        # 4. Await task completion within timeout to guarantee no operations remain running
+        # 4. Await external task completion within timeout to guarantee no operations remain running
         if tasks:
             try:
                 await asyncio.wait_for(
@@ -139,6 +142,12 @@ class ExecutionGate:
                 logger.error("In-flight tasks did not terminate cleanly within %.1fs timeout", timeout)
 
         logger.info("Cancelled and awaited %d in-flight operations (reason: %s)", cancelled_count, reason)
+
+        # If current_task was registered in-flight, cancel it now so it aborts cleanly
+        if self_in_flight and current_task and not current_task.done():
+            current_task.cancel()
+            await asyncio.sleep(0)
+
         return cancelled_count
 
     async def trigger_emergency_stop(self, task_id: str | None = None, db: WorkerDatabase | None = None) -> None:

@@ -8,6 +8,7 @@ import fcntl
 import json
 import logging
 import os
+import signal
 import subprocess
 import time
 import urllib.request
@@ -52,6 +53,7 @@ class BrowserSessionManager:
         self._lock_file: Path = self.config.user_data_dir / ".worker_profile.lock"
         self._lock_fd: int | None = None
         self._owns_process: bool = False
+        self._attached_pid: int | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -219,8 +221,15 @@ class BrowserSessionManager:
                 return None
             lstart = out[:24].strip()
             cmd = out[24:].strip()
-            parts = cmd.split(None, 1)
-            executable = parts[0] if parts else ""
+            # Resolve executable path (which on macOS often contains spaces, e.g. Google Chrome.app)
+            detected = self.config.chrome_binary_path or self._detect_chrome_binary()
+            if detected and cmd.startswith(str(detected)):
+                executable = str(detected)
+            elif " --" in cmd and Path(cmd.split(" --", 1)[0].strip()).exists():
+                executable = cmd.split(" --", 1)[0].strip()
+            else:
+                parts = cmd.split(None, 1)
+                executable = parts[0] if parts else ""
             return {
                 "start_time": lstart,
                 "executable": executable,
@@ -394,6 +403,10 @@ class BrowserSessionManager:
             if reconnect_port is not None:
                 self._effective_port = reconnect_port
                 cdp_url = f"http://{self.config.cdp_host}:{reconnect_port}"
+                self._owns_process = True
+                stored_pid = cached.get("pid")
+                if isinstance(stored_pid, int):
+                    self._attached_pid = stored_pid
             elif self.config.cdp_port > 0:
                 target_port = self.config.cdp_port
                 cdp_url = f"http://{self.config.cdp_host}:{target_port}"
@@ -401,8 +414,10 @@ class BrowserSessionManager:
 
                 if is_running:
                     # Existing listener found: enforce ownership validation before connecting
-                    self._verify_existing_ownership(target_port)
+                    owner_record = self._verify_existing_ownership(target_port)
                     self._effective_port = target_port
+                    self._owns_process = True
+                    self._attached_pid = owner_record.get("pid")
                     logger.info("Reusing verified existing Chrome session on port %d", target_port)
                 else:
                     if not auto_launch:
@@ -541,8 +556,8 @@ class BrowserSessionManager:
             is_active=not target_page.is_closed(),
         )
 
-    async def close(self) -> None:
-        """Gracefully disconnect and tear down Chrome session."""
+    async def disconnect(self, keep_browser_alive: bool = True) -> None:
+        """Gracefully disconnect Playwright CDP client, optionally leaving Chrome process running."""
         async with self._lock:
             if self._browser:
                 try:
@@ -558,24 +573,47 @@ class BrowserSessionManager:
                     logger.debug("Error stopping playwright: %s", e)
                 self._playwright = None
 
-            if self._process:
-                try:
-                    self._process.terminate()
-                    self._process.wait(timeout=2.0)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        self._process.kill()
-                self._process = None
+            if not keep_browser_alive:
+                if self._process:
+                    try:
+                        self._process.terminate()
+                        self._process.wait(timeout=2.0)
+                    except Exception:
+                        with contextlib.suppress(Exception):
+                            self._process.kill()
+                    self._process = None
+                elif self._attached_pid and self._is_pid_alive(self._attached_pid):
+                    try:
+                        os.kill(self._attached_pid, signal.SIGTERM)
+                        for _ in range(20):
+                            if not self._is_pid_alive(self._attached_pid):
+                                break
+                            await asyncio.sleep(0.1)
+                        if self._is_pid_alive(self._attached_pid):
+                            os.kill(self._attached_pid, signal.SIGKILL)
+                    except Exception as e:
+                        logger.debug("Error terminating attached browser process: %s", e)
+                    self._attached_pid = None
 
-            if self._owns_process:
-                self._remove_ownership()
+                if self._owns_process:
+                    self._remove_ownership()
+            else:
+                # Leave browser process and ownership file alive for subsequent reconnect
+                self._process = None
+                self._attached_pid = None
+                self._owns_process = False
 
             self._release_profile_lock()
 
             self._active_page = None
             self._effective_port = None
             self._navigation_epochs.clear()
-            logger.info("BrowserSessionManager closed cleanly")
+            logger.info("BrowserSessionManager disconnected (keep_browser_alive=%s)", keep_browser_alive)
+
+    async def close(self) -> None:
+        """Gracefully disconnect and tear down Chrome session."""
+        await self.disconnect(keep_browser_alive=False)
+        logger.info("BrowserSessionManager closed cleanly")
 
     def __del__(self) -> None:
         self._release_profile_lock()

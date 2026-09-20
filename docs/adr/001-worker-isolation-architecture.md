@@ -21,9 +21,9 @@ To solve this, we require:
   *Size*: ~22.5 GB compressed.
   *Note*: Image references must strictly pin this immutable digest to guarantee deterministic and reproducible environments.
 * **Human Takeover & VNC Exposure**:
-  * The agent runs inside the Guest VM.
   * Remote desktop control for human takeover uses macOS built-in Screen Sharing (VNC port 5900) bound to the VM's bridge/shared IP:
-    `vnc://admin:admin@<VM_GUEST_IP>:5900`
+    `vnc://admin@<VM_GUEST_IP>`
+  * Security Policy: Credentials (password/token) MUST NEVER be embedded in VNC URIs to prevent credential leakage through logs, shell history, process arguments, browser history, screenshots, or error reports. macOS Screen Sharing prompts for credentials via secure native UI or Keychain.
   * Never binds VNC to host `127.0.0.1` unless port-forwarded, ensuring clear routing to the isolated VM session.
 
 ---
