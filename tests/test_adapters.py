@@ -129,6 +129,63 @@ def test_visual_computer_use_adapter(tmp_path):
         assert v_res.verified is True
 
 
+def test_interaction_request_json_serializability():
+    import json
+
+    import pytest
+
+    # 1. Valid request without callables serializes cleanly to JSON
+    req = InteractionRequest(
+        mode=InteractionMode.VISUAL_GROUNDED,
+        action="click",
+        target="Login",
+        arguments={"confidence": 0.95, "retries": 2, "meta": {"key": "val"}},
+        timeout_seconds=30.0,
+        execution_id="exec_123",
+        context={"task_id": "t1", "step": 1},
+    )
+    req_dict = req.to_dict()
+    # Ensure json.dumps succeeds without custom serializer
+    json_str = json.dumps(req_dict)
+    assert "Login" in json_str
+    assert "visual_grounded" in json_str
+
+    # 2. Reject callables in arguments
+    with pytest.raises(ValueError, match="must contain only JSON-serializable data; callable found"):
+        InteractionRequest(
+            mode=InteractionMode.VISUAL_GROUNDED,
+            action="click",
+            target="Login",
+            arguments={"action_fn": lambda: "unsafe"},
+        )
+
+
+def test_visual_adapter_executor_injection():
+    import asyncio
+
+    # Test executor injection via constructor
+    executed = []
+    adapter = VisualComputerUseAdapter(executor=lambda req: executed.append(req.target) or "done")
+    req = InteractionRequest(
+        mode=InteractionMode.VISUAL_GROUNDED,
+        action="click",
+        target="Target1",
+    )
+    res = asyncio.run(adapter.execute(req))
+    assert res.result == "done"
+    assert executed == ["Target1"]
+
+    # Test executor injection via set_executor
+    adapter.set_executor(lambda: "zero_arg_done")
+    req2 = InteractionRequest(
+        mode=InteractionMode.VISUAL_GROUNDED,
+        action="click",
+        target="Target2",
+    )
+    res2 = asyncio.run(adapter.execute(req2))
+    assert res2.result == "zero_arg_done"
+
+
 def test_extended_event_schema_persistence(tmp_path):
     db = WorkerDatabase(tmp_path / "extended_events.db")
     task_id = "task_ext_01"

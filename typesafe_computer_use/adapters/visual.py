@@ -26,8 +26,13 @@ class VisualComputerUseAdapter(InteractionAdapter):
     Preserves existing OCR/AX perception, TypeSafe index selection, and Quartz synthetic input.
     """
 
-    def __init__(self):
+    def __init__(self, executor: Any = None) -> None:
+        self.executor = executor
         self._cancelled_executions: set[str] = set()
+
+    def set_executor(self, executor: Any) -> None:
+        """Inject the physical visual execution callable (from WorkerService or testing)."""
+        self.executor = executor
 
     @property
     def mode(self) -> InteractionMode:
@@ -81,11 +86,12 @@ class VisualComputerUseAdapter(InteractionAdapter):
                 error="Input is currently locked (Emergency stop or Takeover active)",
             )
 
-        # If an action callable is provided, execute it within the adapter boundary
-        action_fn = request.arguments.get("action_fn")
-        if callable(action_fn):
+        # Execute injected visual executor if present (decoupled from InteractionRequest.arguments)
+        if callable(self.executor):
             try:
-                result_val = action_fn()
+                import inspect
+                sig = inspect.signature(self.executor)
+                result_val = self.executor(request) if len(sig.parameters) > 0 else self.executor()
             except Exception as e:
                 return InteractionResult(
                     mode=self.mode,

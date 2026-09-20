@@ -82,3 +82,129 @@ def test_navigation_epoch_tracking():
 
     on_nav(mock_page.main_frame)
     assert mgr.get_navigation_epoch(mock_page) == 3
+
+
+def test_ownership_file_creation_and_removal(tmp_path: Path):
+    """Recording ownership writes valid metadata and close() removes it."""
+    import asyncio
+    import json
+    import os
+
+    cfg = BrowserSessionConfig(user_data_dir=tmp_path / "profile")
+    mgr = BrowserSessionManager(cfg)
+
+    # 1. Record ownership
+    current_pid = os.getpid()
+    mgr._record_ownership(current_pid, 9222, "Chrome/133.0.0.0")
+
+    owner_file = tmp_path / "profile" / "browser_ownership.json"
+    assert owner_file.exists()
+
+    with open(owner_file, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data["browser_pid"] == current_pid
+    assert data["cdp_port"] == 9222
+    assert data["browser_version"] == "Chrome/133.0.0.0"
+    assert data["worker_instance_id"] == mgr.session_id
+
+    # 2. Cleanup removes ownership
+    asyncio.run(mgr.close())
+    assert not owner_file.exists()
+
+
+def test_ownership_verification_blocks_unowned_port(tmp_path: Path):
+    """Connecting to an active port without browser_ownership.json must raise BrowserSecurityError."""
+    cfg = BrowserSessionConfig(user_data_dir=tmp_path / "profile", cdp_port=9222)
+    mgr = BrowserSessionManager(cfg)
+
+    with pytest.raises(BrowserSecurityError, match=r"ownership file '.*' is missing"):
+        mgr._verify_existing_ownership(9222)
+
+
+def test_ownership_verification_blocks_stale_or_mismatched_ownership(tmp_path: Path):
+    """Mismatched PID, dead PID, or mismatched port must raise BrowserSecurityError."""
+    import json
+
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    owner_file = profile_dir / "browser_ownership.json"
+
+    cfg = BrowserSessionConfig(user_data_dir=profile_dir, cdp_port=9222)
+    mgr = BrowserSessionManager(cfg)
+
+    # Dead PID (e.g. 99999999)
+    owner_file.write_text(
+        json.dumps({
+            "browser_pid": 99999999,
+            "profile_path": str(profile_dir.resolve()),
+            "cdp_port": 9222,
+            "browser_version": "Chrome/133",
+            "started_at": 1000.0,
+            "worker_instance_id": "sess_dead",
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BrowserSecurityError, match="ownership validation failed"):
+        mgr._verify_existing_ownership(9222)
+
+    # Wrong port
+    import os
+    owner_file.write_text(
+        json.dumps({
+            "browser_pid": os.getpid(),
+            "profile_path": str(profile_dir.resolve()),
+            "cdp_port": 9223,
+            "browser_version": "Chrome/133",
+            "started_at": 1000.0,
+            "worker_instance_id": "sess_wrong_port",
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BrowserSecurityError, match="ownership validation failed"):
+        mgr._verify_existing_ownership(9222)
+
+
+def test_ownership_verification_accepts_valid_owner(tmp_path: Path):
+    """Valid owner file with matching alive PID, port, and profile path passes verification."""
+    import json
+    import os
+
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    owner_file = profile_dir / "browser_ownership.json"
+
+    current_pid = os.getpid()
+    owner_file.write_text(
+        json.dumps({
+            "browser_pid": current_pid,
+            "profile_path": str(profile_dir.resolve()),
+            "cdp_port": 9222,
+            "browser_version": "Chrome/133",
+            "started_at": 1000.0,
+            "worker_instance_id": "sess_valid",
+        }),
+        encoding="utf-8",
+    )
+
+    cfg = BrowserSessionConfig(user_data_dir=profile_dir, cdp_port=9222)
+    mgr = BrowserSessionManager(cfg)
+    assert mgr._verify_existing_ownership(9222) is True
+
+
+def test_dynamic_port_resolution_from_devtools_active_port(tmp_path: Path):
+    """BrowserSessionManager should resolve ephemeral port from DevToolsActivePort file."""
+    import asyncio
+
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    active_port_file = profile_dir / "DevToolsActivePort"
+    active_port_file.write_text("54321\n/devtools/browser/abc-123\n", encoding="utf-8")
+
+    cfg = BrowserSessionConfig(user_data_dir=profile_dir, cdp_port=0)
+    mgr = BrowserSessionManager(cfg)
+
+    resolved_port = asyncio.run(mgr._resolve_dynamic_port(timeout=1.0))
+    assert resolved_port == 54321

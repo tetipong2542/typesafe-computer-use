@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Delayed Action Test</title>
+</head>
+<body>
+  <h1>Delayed Action Page</h1>
+  <button id="delayed-btn" onclick="setTimeout(function() { document.getElementById('status').innerText = 'action_mutated'; }, 500)">
+    Delayed Click Button
+  </button>
+  <div id="status">pending</div>
+</body>
+</html>

@@ -63,6 +63,28 @@ class InteractionRequest:
     execution_id: str = ""
     context: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Validate that arguments contains only JSON-serializable primitives and no callables."""
+        for k, v in self.arguments.items():
+            if callable(v):
+                raise ValueError(
+                    f"InteractionRequest.arguments must contain only JSON-serializable data; "
+                    f"callable found for key '{k}'. Inject executors via Adapter dependencies instead."
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize request to a JSON-compatible dictionary without custom serializers."""
+        return {
+            "mode": self.mode.value if isinstance(self.mode, InteractionMode) else str(self.mode),
+            "action": self.action,
+            "target": self.target,
+            "arguments": dict(self.arguments),
+            "timeout_seconds": self.timeout_seconds,
+            "execution_id": self.execution_id,
+            "context": dict(self.context),
+        }
+
+
 
 @dataclass
 class InteractionResult:

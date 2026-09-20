@@ -118,9 +118,11 @@ class BrowserDOMAdapter(InteractionAdapter):
         args = request.arguments
         execution_id = request.execution_id or f"dom_exec_{int(time.time() * 1000)}"
 
-        # 1. Check Global Execution Gate
+        # 1. Check Global Execution Gate and register in-flight
         try:
             await self.execution_gate.check_gate_or_raise(task_id=request.context.get("task_id"))
+            current_task = asyncio.current_task()
+            self.execution_gate.register_in_flight(execution_id, task=current_task)
         except Exception as e:
             return InteractionResult(
                 mode=self.mode,
@@ -136,34 +138,30 @@ class BrowserDOMAdapter(InteractionAdapter):
                 error=f"Execution gate blocked action: {e}",
             )
 
-        page = await self.session_manager.get_active_page()
-        expected_epoch = args.get("navigation_epoch")
-        current_epoch = self.session_manager.get_navigation_epoch(page)
-
-        # Check navigation epoch consistency
-        if expected_epoch is not None and expected_epoch != current_epoch:
-            return InteractionResult(
-                mode=self.mode,
-                adapter="BrowserDOMAdapter",
-                action=action,
-                target=target,
-                arguments=args,
-                confidence=0.0,
-                risk=RiskLevel.NORMAL,
-                side_effect_state=SideEffectState.NOT_STARTED,
-                duration_ms=(time.time() - start_time) * 1000,
-                result=None,
-                error=f"Navigation epoch mismatch: expected {expected_epoch}, current is {current_epoch}",
-            )
-
-        # 2. Register cancellation with the Execution Gate
-        current_task = asyncio.current_task()
-        self.execution_gate.register_in_flight(execution_id, task=current_task)
-
+        side_effect = SideEffectState.NOT_STARTED
         try:
+            page = await self.session_manager.get_active_page()
+            expected_epoch = args.get("navigation_epoch")
+            current_epoch = self.session_manager.get_navigation_epoch(page)
+
+            # Check navigation epoch consistency
+            if expected_epoch is not None and expected_epoch != current_epoch:
+                return InteractionResult(
+                    mode=self.mode,
+                    adapter="BrowserDOMAdapter",
+                    action=action,
+                    target=target,
+                    arguments=args,
+                    confidence=0.0,
+                    risk=RiskLevel.NORMAL,
+                    side_effect_state=SideEffectState.NOT_STARTED,
+                    duration_ms=(time.time() - start_time) * 1000,
+                    result=None,
+                    error=f"Navigation epoch mismatch: expected {expected_epoch}, current is {current_epoch}",
+                )
+
             timeout_ms = int(request.timeout_seconds * 1000)
             res_data: Any = None
-            side_effect = SideEffectState.NOT_STARTED
 
             if action == "navigate":
                 url = args.get("url") or target
@@ -203,6 +201,7 @@ class BrowserDOMAdapter(InteractionAdapter):
 
             elif action == "press":
                 key = args.get("key") or target
+                side_effect = SideEffectState.UNKNOWN
                 await page.keyboard.press(key)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 res_data = {"pressed": key}
@@ -210,6 +209,7 @@ class BrowserDOMAdapter(InteractionAdapter):
             elif action == "scroll":
                 delta_x = args.get("delta_x", 0)
                 delta_y = args.get("delta_y", 300)
+                side_effect = SideEffectState.UNKNOWN
                 await page.mouse.wheel(delta_x, delta_y)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 res_data = {"scroll_x": delta_x, "scroll_y": delta_y}
@@ -243,7 +243,7 @@ class BrowserDOMAdapter(InteractionAdapter):
             )
 
         except asyncio.CancelledError:
-            logger.info("DOM action %s on %s was cancelled by Execution Gate", action, target)
+            logger.info("DOM action %s on %s was cancelled by Execution Gate (side_effect=%s)", action, target, side_effect.value)
             return InteractionResult(
                 mode=self.mode,
                 adapter="BrowserDOMAdapter",
@@ -252,7 +252,7 @@ class BrowserDOMAdapter(InteractionAdapter):
                 arguments=args,
                 confidence=0.0,
                 risk=RiskLevel.NORMAL,
-                side_effect_state=SideEffectState.NOT_STARTED,
+                side_effect_state=side_effect,
                 duration_ms=(time.time() - start_time) * 1000,
                 result=None,
                 error="Action cancelled by Execution Gate",

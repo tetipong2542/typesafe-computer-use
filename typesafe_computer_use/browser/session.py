@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import os
 import subprocess
 import time
 import urllib.request
@@ -44,6 +46,9 @@ class BrowserSessionManager:
         self._navigation_epochs: dict[str, int] = {}
         self._lock = asyncio.Lock()
         self._session_id = f"session_{int(time.time())}"
+        self._effective_port: int | None = None
+        self._ownership_file: Path = self.config.user_data_dir / "browser_ownership.json"
+        self._owns_process: bool = False
 
     @property
     def is_connected(self) -> bool:
@@ -53,6 +58,11 @@ class BrowserSessionManager:
     @property
     def session_id(self) -> str:
         return self._session_id
+
+    @property
+    def effective_port(self) -> int:
+        """Return effective CDP port (configured or dynamically allocated)."""
+        return self._effective_port if self._effective_port is not None else self.config.cdp_port
 
     def get_navigation_epoch(self, page: Page | None = None) -> int:
         """Get current navigation epoch for a given page or the active page."""
@@ -155,25 +165,142 @@ class BrowserSessionManager:
             self._active_page = await self._resolve_active_page()
             return self._active_page
 
+    def _is_pid_alive(self, pid: int) -> bool:
+        """Check whether a given PID corresponds to a running process."""
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError, OSError):
+            return False
+
+    def _verify_existing_ownership(self, target_port: int) -> bool:
+        """Verify that an already listening CDP port belongs to our managed profile and process.
+
+        Raises BrowserSecurityError if port is occupied by untracked or mismatched process.
+        """
+        if not self._ownership_file.exists():
+            raise BrowserSecurityError(
+                f"CDP port {target_port} is already listening on loopback, but ownership file "
+                f"'{self._ownership_file}' is missing. Refusing to attach to untracked browser."
+            )
+        try:
+            with open(self._ownership_file, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            raise BrowserSecurityError(
+                f"Failed to read ownership file '{self._ownership_file}': {e}. Refusing to attach."
+            ) from e
+
+        stored_pid = data.get("browser_pid")
+        stored_port = data.get("cdp_port")
+        stored_profile = data.get("profile_path")
+
+        expected_profile = str(self.config.user_data_dir.resolve())
+        if (
+            stored_port != target_port
+            or stored_profile != expected_profile
+            or not isinstance(stored_pid, int)
+            or not self._is_pid_alive(stored_pid)
+        ):
+            raise BrowserSecurityError(
+                f"CDP port {target_port} ownership validation failed: stored_pid={stored_pid} "
+                f"(alive={self._is_pid_alive(stored_pid) if isinstance(stored_pid, int) else False}), "
+                f"stored_port={stored_port} (expected {target_port}), "
+                f"stored_profile={stored_profile} (expected {expected_profile})."
+            )
+        return True
+
+    def _record_ownership(self, pid: int, port: int, browser_version: str = "unknown") -> None:
+        """Record ownership metadata to browser_ownership.json."""
+        data = {
+            "browser_pid": pid,
+            "profile_path": str(self.config.user_data_dir.resolve()),
+            "cdp_port": port,
+            "browser_version": browser_version,
+            "started_at": time.time(),
+            "worker_instance_id": self._session_id,
+        }
+        self.config.user_data_dir.mkdir(parents=True, exist_ok=True)
+        tmp_file = self._ownership_file.with_suffix(".tmp")
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        tmp_file.replace(self._ownership_file)
+        self._owns_process = True
+
+    def _remove_ownership(self) -> None:
+        """Clean up ownership metadata file."""
+        if self._ownership_file.exists():
+            with contextlib.suppress(Exception):
+                self._ownership_file.unlink()
+        self._owns_process = False
+
+    async def _resolve_dynamic_port(self, timeout: float) -> int:
+        """Wait for Chrome to write DevToolsActivePort and parse ephemeral port."""
+        active_port_file = self.config.user_data_dir / "DevToolsActivePort"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if active_port_file.exists():
+                try:
+                    content = active_port_file.read_text(encoding="utf-8").splitlines()
+                    if content and content[0].strip().isdigit():
+                        return int(content[0].strip())
+                except Exception:
+                    pass
+            await asyncio.sleep(0.2)
+        raise BrowserCrashError(f"Chrome did not write DevToolsActivePort within {timeout}s")
+
+    async def _fetch_version_info(self, cdp_url: str) -> dict[str, Any]:
+        """Fetch version information from Chrome CDP JSON endpoint."""
+        loop = asyncio.get_running_loop()
+        def _fetch() -> dict[str, Any]:
+            try:
+                with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=1.0) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except Exception:
+                return {}
+        return await loop.run_in_executor(None, _fetch)
+
     async def _connect_internal(self, auto_launch: bool = True) -> None:
         """Connect to Chrome via CDP over loopback, optionally launching it if missing."""
-        cdp_url = f"http://{self.config.cdp_host}:{self.config.cdp_port}"
+        if self.config.cdp_port > 0:
+            target_port = self.config.cdp_port
+            cdp_url = f"http://{self.config.cdp_host}:{target_port}"
+            is_running = await self._check_cdp_ready(cdp_url)
 
-        # 1. Verify CDP endpoint reachability
-        is_running = await self._check_cdp_ready(cdp_url)
-
-        # 2. If not running and auto_launch is True, spawn Chrome process
-        if not is_running:
+            if is_running:
+                # Existing listener found: enforce ownership validation before connecting
+                self._verify_existing_ownership(target_port)
+                self._effective_port = target_port
+                logger.info("Reusing verified existing Chrome session on port %d", target_port)
+            else:
+                if not auto_launch:
+                    raise BrowserNotRunningError(f"CDP endpoint at {cdp_url} is not responding")
+                logger.info("Launching Chrome process on loopback CDP port %d", target_port)
+                await self._launch_chrome_process(port=target_port)
+                self._effective_port = target_port
+                is_ready = await self._wait_for_cdp(cdp_url, timeout=self.config.connect_timeout_seconds)
+                if not is_ready:
+                    raise BrowserCrashError(f"Chrome failed to start CDP listener on {cdp_url}")
+                version_info = await self._fetch_version_info(cdp_url)
+                if self._process:
+                    self._record_ownership(self._process.pid, target_port, version_info.get("Browser", "unknown"))
+        else:
+            # cdp_port == 0: Ephemeral dynamic port
             if not auto_launch:
-                raise BrowserNotRunningError(f"CDP endpoint at {cdp_url} is not responding")
-            logger.info("Launching Chrome process on loopback CDP port %d", self.config.cdp_port)
-            await self._launch_chrome_process()
-            # Wait for readiness
-            is_running = await self._wait_for_cdp(cdp_url, timeout=self.config.connect_timeout_seconds)
-            if not is_running:
+                raise BrowserNotRunningError("Auto launch required when cdp_port is 0")
+            logger.info("Launching Chrome process with dynamic loopback CDP port")
+            await self._launch_chrome_process(port=0)
+            dynamic_port = await self._resolve_dynamic_port(timeout=self.config.connect_timeout_seconds)
+            self._effective_port = dynamic_port
+            cdp_url = f"http://{self.config.cdp_host}:{dynamic_port}"
+            is_ready = await self._wait_for_cdp(cdp_url, timeout=self.config.connect_timeout_seconds)
+            if not is_ready:
                 raise BrowserCrashError(f"Chrome failed to start CDP listener on {cdp_url}")
+            version_info = await self._fetch_version_info(cdp_url)
+            if self._process:
+                self._record_ownership(self._process.pid, dynamic_port, version_info.get("Browser", "unknown"))
 
-        # 3. Connect via Playwright CDP
+        # Connect via Playwright CDP
         if not self._playwright:
             self._playwright = await async_playwright().start()
 
@@ -208,14 +335,20 @@ class BrowserSessionManager:
             await asyncio.sleep(0.3)
         return False
 
-    async def _launch_chrome_process(self) -> None:
+    async def _launch_chrome_process(self, port: int | None = None) -> None:
         """Launch managed Chrome subprocess strictly on loopback address."""
-        # Enforce security constraint
         if self.config.cdp_host not in ("127.0.0.1", "localhost"):
             raise BrowserSecurityError(f"Refusing to launch Chrome with non-loopback host {self.config.cdp_host}")
 
-        # Ensure user data dir exists
         self.config.user_data_dir.mkdir(parents=True, exist_ok=True)
+        launch_port = port if port is not None else self.config.cdp_port
+
+        # Clear stale DevToolsActivePort if launching with dynamic port
+        if launch_port == 0:
+            active_port_file = self.config.user_data_dir / "DevToolsActivePort"
+            if active_port_file.exists():
+                with contextlib.suppress(Exception):
+                    active_port_file.unlink()
 
         binary_path = self.config.chrome_binary_path or self._detect_chrome_binary()
         if not binary_path or not binary_path.exists():
@@ -226,7 +359,7 @@ class BrowserSessionManager:
         cmd = [
             str(binary_path),
             f"--remote-debugging-address={self.config.cdp_host}",
-            f"--remote-debugging-port={self.config.cdp_port}",
+            f"--remote-debugging-port={launch_port}",
             f"--user-data-dir={self.config.user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
@@ -299,6 +432,10 @@ class BrowserSessionManager:
                         self._process.kill()
                 self._process = None
 
+            if self._owns_process:
+                self._remove_ownership()
+
             self._active_page = None
+            self._effective_port = None
             self._navigation_epochs.clear()
             logger.info("BrowserSessionManager closed cleanly")

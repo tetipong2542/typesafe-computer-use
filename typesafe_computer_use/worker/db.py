@@ -130,7 +130,14 @@ class WorkerDatabase:
                 if col_name not in existing_cols:
                     conn.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type};")
 
+            conn.execute("PRAGMA user_version = 3;")
             conn.commit()
+
+    def get_schema_version(self) -> int:
+        """Get current SQLite schema user_version."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("PRAGMA user_version;")
+            return cursor.fetchone()[0]
 
     def recover_interrupted_tasks(self) -> list[str]:
         """Mark any active tasks as interrupted upon worker start/restart.

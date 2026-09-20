@@ -739,6 +739,9 @@ class WorkerService:
                             def do_visual_perform(d=decision, s=screen, it=items, c=ctx):
                                 return perform(d, s, it, c)
 
+                            # Inject executor into Visual adapter dependency
+                            if hasattr(self.router, "visual_adapter") and hasattr(self.router.visual_adapter, "set_executor"):
+                                self.router.visual_adapter.set_executor(do_visual_perform)
 
                             target_str = target_text or decision.chosen
                             req = InteractionRequest(
@@ -746,7 +749,6 @@ class WorkerService:
                                 action=decision.kind.choice,
                                 target=target_str,
                                 arguments={
-                                    "action_fn": do_visual_perform,
                                     "confidence": decision.confidence,
                                 },
                                 execution_id=f"exec_{task_id}_{step}",

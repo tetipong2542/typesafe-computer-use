@@ -125,3 +125,148 @@ def test_new_action_rejected_after_gate_closed():
         dummy_task.cancel()
 
     asyncio.run(_test())
+
+
+def test_delayed_click_cancellation_yields_unknown_side_effect():
+    """Cancelling an in-flight DOM click during CDP dispatch yields SideEffectState.UNKNOWN."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from typesafe_computer_use.adapters import BrowserDOMAdapter, InteractionMode, InteractionRequest, SideEffectState
+    from typesafe_computer_use.browser import BrowserSessionManager
+
+    async def _test():
+        gate = ExecutionGate.get_instance()
+
+        mock_page = MagicMock()
+        mock_page.is_closed.return_value = False
+        mock_page.url = "http://127.0.0.1:8080/button"
+
+        mock_locator = MagicMock()
+        mock_locator.count = AsyncMock(return_value=1)
+        async def delayed_click(*args, **kwargs):
+            # Simulates CDP click in-flight
+            await asyncio.sleep(2.0)
+
+        mock_locator.click = AsyncMock(side_effect=delayed_click)
+        mock_page.locator.return_value = mock_locator
+
+        mock_session_mgr = MagicMock(spec=BrowserSessionManager)
+        mock_session_mgr.get_active_page = AsyncMock(return_value=mock_page)
+        mock_session_mgr.get_navigation_epoch.return_value = 1
+
+        adapter = BrowserDOMAdapter(session_manager=mock_session_mgr, execution_gate=gate)
+
+        req = InteractionRequest(
+            mode=InteractionMode.BROWSER_DOM,
+            action="click",
+            target="#delayed-btn",
+            execution_id="delayed_exec_1",
+            context={"navigation_epoch": 1},
+        )
+
+        exec_task = asyncio.create_task(adapter.execute(req))
+        await asyncio.sleep(0.05)  # Wait for locator.click to be entered
+
+        # Trigger takeover while click is in flight
+        await gate.trigger_takeover()
+
+        result = await exec_task
+        assert result.error == "Action cancelled by Execution Gate"
+        assert result.side_effect_state == SideEffectState.UNKNOWN
+
+    asyncio.run(_test())
+
+
+def test_pre_dispatch_cancellation_yields_not_started_side_effect():
+    """Cancelling prior to dispatch (e.g. while resolving page) yields SideEffectState.NOT_STARTED."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from typesafe_computer_use.adapters import BrowserDOMAdapter, InteractionMode, InteractionRequest, SideEffectState
+    from typesafe_computer_use.browser import BrowserSessionManager
+
+    async def _test():
+        gate = ExecutionGate.get_instance()
+
+        mock_session_mgr = MagicMock(spec=BrowserSessionManager)
+        async def delayed_get_page(*args, **kwargs):
+            await asyncio.sleep(2.0)
+            return MagicMock()
+
+        mock_session_mgr.get_active_page = AsyncMock(side_effect=delayed_get_page)
+        mock_session_mgr.get_navigation_epoch.return_value = 1
+
+        adapter = BrowserDOMAdapter(session_manager=mock_session_mgr, execution_gate=gate)
+
+        req = InteractionRequest(
+            mode=InteractionMode.BROWSER_DOM,
+            action="click",
+            target="#delayed-btn",
+            execution_id="delayed_exec_2",
+            context={"navigation_epoch": 1},
+        )
+
+        exec_task = asyncio.create_task(adapter.execute(req))
+        await asyncio.sleep(0.05)
+
+        await gate.trigger_takeover()
+
+        result = await exec_task
+        assert result.error == "Action cancelled by Execution Gate"
+        assert result.side_effect_state == SideEffectState.NOT_STARTED
+
+    asyncio.run(_test())
+
+
+def test_delayed_click_html_fixture_execution_gate():
+    """Verify delayed click HTML fixture behavior and DOM mutation tracking."""
+    from pathlib import Path
+    from unittest.mock import AsyncMock, MagicMock
+
+    from playwright.async_api import async_playwright
+
+    from typesafe_computer_use.adapters import BrowserDOMAdapter, InteractionMode, InteractionRequest, SideEffectState
+    from typesafe_computer_use.browser import BrowserSessionManager
+
+    chrome_path = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    if not chrome_path.exists():
+        pytest.skip("Chrome binary not found on macOS host")
+
+    fixture_path = Path(__file__).parent / "fixtures" / "delayed_action.html"
+
+    async def _test():
+        gate = ExecutionGate.get_instance()
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(
+                executable_path=str(chrome_path),
+                headless=True,
+            )
+            page = await browser.new_page()
+            await page.goto(fixture_path.resolve().as_uri())
+
+            session_mgr = MagicMock(spec=BrowserSessionManager)
+            session_mgr.get_active_page = AsyncMock(return_value=page)
+            session_mgr.get_navigation_epoch.return_value = 1
+
+            adapter = BrowserDOMAdapter(session_manager=session_mgr, execution_gate=gate)
+
+            req = InteractionRequest(
+                mode=InteractionMode.BROWSER_DOM,
+                action="click",
+                target="#delayed-btn",
+                execution_id="fixture_delayed_1",
+                context={"navigation_epoch": 1},
+            )
+
+            res = await adapter.execute(req)
+            assert res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS
+
+            # Await delayed DOM mutation
+            await asyncio.sleep(0.6)
+            status_text = await page.locator("#status").inner_text()
+            assert status_text == "action_mutated"
+
+            await browser.close()
+
+    asyncio.run(_test())
+
+
