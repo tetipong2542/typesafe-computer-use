@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .errors import (
+    AmbiguousPageError,
     AmbiguousTargetError,
     BrowserCrashError,
     BrowserError,
@@ -15,6 +16,7 @@ from .models import BrowserSessionConfig, CDPEndpoint, PageSessionInfo, get_defa
 from .session import BrowserSessionManager
 
 __all__ = [
+    "AmbiguousPageError",
     "AmbiguousTargetError",
     "BrowserCrashError",
     "BrowserError",

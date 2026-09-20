@@ -31,11 +31,17 @@ from typesafe_computer_use.worker.gate import ExecutionGate
 
 logger = logging.getLogger("typesafe.adapters.browser_dom")
 
-# Sensitive attribute pattern for redacting passwords, tokens, credit cards
+# Sensitive attribute pattern for redacting passwords, tokens, credit cards, session IDs
 SENSITIVE_ATTR_PATTERN = re.compile(
-    r"(password|passwd|secret|token|api_?key|card|cvv|cvc|ssn|auth)",
+    r"(password|passwd|secret|token|api_?key|card|cvv|cvc|ssn|auth|bearer|session[-_]?id)",
     re.IGNORECASE,
 )
+CARD_PATTERN = re.compile(r"\b(?:\d{4}[ -]?){3}\d{1,4}\b")
+SECRET_PATTERN = re.compile(
+    r"\b(?:sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9]{36}|Bearer\s+[a-zA-Z0-9_\-\.]{20,}|eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,})\b",
+    re.IGNORECASE,
+)
+
 
 
 class BrowserDOMAdapter(InteractionAdapter):
@@ -179,8 +185,12 @@ class BrowserDOMAdapter(InteractionAdapter):
                 side_effect = SideEffectState.UNKNOWN
                 await locator.fill(text, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
-                # Redact text in returned data if sensitive target
-                is_sensitive = bool(SENSITIVE_ATTR_PATTERN.search(target))
+                # Redact text in returned data if sensitive target or sensitive payload
+                is_sensitive = bool(
+                    SENSITIVE_ATTR_PATTERN.search(target)
+                    or CARD_PATTERN.search(text)
+                    or SECRET_PATTERN.search(text)
+                )
                 res_data = {"filled": target, "value": "[REDACTED]" if is_sensitive else text}
 
             elif action == "select_option":
@@ -351,7 +361,7 @@ class BrowserDOMAdapter(InteractionAdapter):
         label = args.get("label")
         placeholder = args.get("placeholder")
         test_id = args.get("test_id")
-        text = args.get("text")
+        match_text = args.get("match_text") or args.get("element_text")
         index = args.get("index")
 
         locator: Locator | None = None
@@ -381,13 +391,14 @@ class BrowserDOMAdapter(InteractionAdapter):
             locator = page.get_by_test_id(tid_val)
 
         # 5. Visible Text
-        if locator is None and (text or target.startswith("text=")):
-            txt_val = text or target.split("text=", 1)[1]
+        if locator is None and (match_text or target.startswith("text=")):
+            txt_val = match_text or target.split("text=", 1)[1]
             locator = page.get_by_text(txt_val)
 
         # 6. Fallback to CSS / Standard locator
         if locator is None:
             locator = page.locator(target)
+
 
         # Check match count and resolve ambiguity
         count = await locator.count()
@@ -424,15 +435,26 @@ class BrowserDOMAdapter(InteractionAdapter):
         """Extract a bounded, sanitized DOM representation with untrusted delimiters and redacted secrets."""
         raw_text = await page.evaluate(
             """({ maxElements, maxDepth }) => {
-                const SENSITIVE = /(password|passwd|secret|token|card|cvv|ssn|auth)/i;
+                const SENSITIVE_NAMES = /(password|passwd|secret|token|api_?key|auth|bearer|credit[-_]?card|card[-_]?num|cvv|cvc|ssn|session[-_]?id)/i;
+                const CARD_REGEX = /\\b(?:\\d{4}[ -]?){3}\\d{1,4}\\b/g;
+                const SECRET_REGEX = /\\b(?:sk-[a-zA-Z0-9_\\-]{20,}|ghp_[a-zA-Z0-9]{36}|Bearer\\s+[a-zA-Z0-9_\\-\\.]+|eyJ[a-zA-Z0-9_\\-]{10,}\\.[a-zA-Z0-9_\\-]{10,}\\.[a-zA-Z0-9_\\-]{10,})\\b/gi;
+                const CVC_REGEX = /\\b(?:cvc|cvv)\\s*[:=]?\\s*\\d{3,4}\\b/gi;
                 const IGNORED_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'PATH', 'IFRAME']);
+
+                function sanitizeText(str) {
+                    if (!str || typeof str !== 'string') return str;
+                    return str
+                        .replace(SECRET_REGEX, '[REDACTED_SECRET]')
+                        .replace(CARD_REGEX, '[REDACTED_CARD]')
+                        .replace(CVC_REGEX, '[REDACTED_CVC]');
+                }
 
                 let count = 0;
                 function walk(node, depth) {
                     if (!node || depth > maxDepth || count >= maxElements) return null;
                     if (node.nodeType === Node.TEXT_NODE) {
                         const txt = node.textContent.trim();
-                        return txt ? txt : null;
+                        return txt ? sanitizeText(txt) : null;
                     }
                     if (node.nodeType !== Node.ELEMENT_NODE) return null;
                     if (IGNORED_TAGS.has(node.tagName)) return null;
@@ -446,7 +468,21 @@ class BrowserDOMAdapter(InteractionAdapter):
 
                     if (node.id) attrs.push(`id="${node.id}"`);
                     if (node.getAttribute('role')) attrs.push(`role="${node.getAttribute('role')}"`);
-                    if (node.getAttribute('aria-label')) attrs.push(`aria-label="${node.getAttribute('aria-label')}"`);
+
+                    const ariaLabel = node.getAttribute('aria-label');
+                    if (ariaLabel) {
+                        attrs.push(`aria-label="${sanitizeText(ariaLabel)}"`);
+                    }
+
+                    const placeholder = node.getAttribute('placeholder');
+                    if (placeholder) {
+                        if (SENSITIVE_NAMES.test(placeholder)) {
+                            attrs.push('placeholder="[REDACTED]"');
+                        } else {
+                            attrs.push(`placeholder="${sanitizeText(placeholder)}"`);
+                        }
+                    }
+
                     if (node.getAttribute('data-testid')) attrs.push(`data-testid="${node.getAttribute('data-testid')}"`);
 
                     if (tag === 'input' || tag === 'textarea') {
@@ -455,10 +491,12 @@ class BrowserDOMAdapter(InteractionAdapter):
                         attrs.push(`type="${type}"`);
                         if (name) attrs.push(`name="${name}"`);
 
-                        if (type === 'password' || SENSITIVE.test(name) || SENSITIVE.test(node.id)) {
+                        const rawVal = node.value || node.getAttribute('value') || '';
+                        if (type === 'password' || SENSITIVE_NAMES.test(name) || SENSITIVE_NAMES.test(node.id || '')) {
                             attrs.push('value="[REDACTED]"');
-                        } else if (node.value) {
-                            attrs.push(`value="${node.value.slice(0, 50)}"`);
+                        } else if (rawVal) {
+                            const sanitizedVal = sanitizeText(rawVal);
+                            attrs.push(`value="${sanitizedVal.slice(0, 50)}"`);
                         }
                     }
 
@@ -491,7 +529,8 @@ class BrowserDOMAdapter(InteractionAdapter):
                     const candidates = [];
                     const elements = document.querySelectorAll('button, a, input, select, textarea, [role="button"]');
                     for (const el of elements) {
-                        if (el.offsetParent === null) continue; // invisible
+                        const style = window.getComputedStyle(el);
+                        if (style.display === 'none' || style.visibility === 'hidden') continue;
                         const tid = el.getAttribute('data-testid');
                         if (tid) {
                             candidates.push(`[data-testid='${tid}']`);
@@ -500,7 +539,7 @@ class BrowserDOMAdapter(InteractionAdapter):
                         const role = el.getAttribute('role') || el.tagName.toLowerCase();
                         const name = el.getAttribute('aria-label') || el.innerText?.trim() || el.getAttribute('name');
                         if (name && name.length < 40) {
-                            candidates.push(`role=${role}[name=${name.replace(/[\n\r]+/g, ' ')}]`);
+                            candidates.push(`role=${role}[name=${name.replace(/[\\n\\r]+/g, ' ')}]`);
                             continue;
                         }
                         if (el.id) {

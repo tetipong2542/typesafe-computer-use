@@ -116,6 +116,15 @@ class WorkerDatabase:
                 ("input_tokens", "INTEGER DEFAULT 0"),
                 ("output_tokens", "INTEGER DEFAULT 0"),
                 ("estimated_cost", "REAL DEFAULT 0.0"),
+                ("router_mode", "TEXT DEFAULT 'legacy'"),
+                ("executed_mode", "TEXT DEFAULT 'visual_grounded'"),
+                ("shadow_mode", "TEXT"),
+                ("shadow_target", "TEXT"),
+                ("shadow_confidence", "REAL"),
+                ("shadow_match_result", "TEXT"),
+                ("browser_session_id", "TEXT"),
+                ("page_id", "TEXT"),
+                ("navigation_epoch", "INTEGER"),
             ]
             for col_name, col_type in new_cols:
                 if col_name not in existing_cols:
@@ -245,8 +254,10 @@ class WorkerDatabase:
                     interaction_mode, verification_mode, adapter, capability_snapshot_id,
                     router_reason, attempted_modes, fallback_from, fallback_to,
                     fallback_reason, tool_name, origin, side_effect_state,
-                    duration_ms, input_tokens, output_tokens, estimated_cost
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    duration_ms, input_tokens, output_tokens, estimated_cost,
+                    router_mode, executed_mode, shadow_mode, shadow_target,
+                    shadow_confidence, shadow_match_result, browser_session_id, page_id, navigation_epoch
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
@@ -281,6 +292,15 @@ class WorkerDatabase:
                     event.input_tokens,
                     event.output_tokens,
                     event.estimated_cost,
+                    event.router_mode,
+                    event.executed_mode,
+                    event.shadow_mode,
+                    event.shadow_target,
+                    event.shadow_confidence,
+                    event.shadow_match_result,
+                    event.browser_session_id,
+                    event.page_id,
+                    event.navigation_epoch,
                 ),
             )
             conn.commit()
@@ -303,7 +323,8 @@ class WorkerDatabase:
                 )
 
             events: list[TaskEvent] = []
-            for r in cursor.fetchall():
+            for raw_r in cursor.fetchall():
+                r = dict(raw_r)
                 events.append(
                     TaskEvent(
                         event_id=r["event_id"],
@@ -320,23 +341,32 @@ class WorkerDatabase:
                         screenshot_id=r["screenshot_id"],
                         result=r["result"],
                         error=r["error"],
-                        interaction_mode=r["interaction_mode"] or "visual_grounded",
-                        verification_mode=r["verification_mode"] or "visual_grounded",
-                        adapter=r["adapter"] or "VisualComputerUseAdapter",
-                        capability_snapshot_id=r["capability_snapshot_id"],
-                        router_reason=r["router_reason"],
-                        attempted_modes=json.loads(r["attempted_modes"] or "[]"),
-                        fallback_from=r["fallback_from"],
-                        fallback_to=r["fallback_to"],
-                        fallback_reason=r["fallback_reason"],
-                        tool_name=r["tool_name"],
-                        origin=r["origin"],
-                        side_effect_state=r["side_effect_state"] or "not_started",
-                        duration_ms=r["duration_ms"],
-                        input_tokens=r["input_tokens"] or 0,
-                        output_tokens=r["output_tokens"] or 0,
-                        estimated_cost=r["estimated_cost"] or 0.0,
-                        extra=json.loads(r["extra_json"] or "{}"),
+                        interaction_mode=r.get("interaction_mode") or "visual_grounded",
+                        verification_mode=r.get("verification_mode") or "visual_grounded",
+                        adapter=r.get("adapter") or "VisualComputerUseAdapter",
+                        capability_snapshot_id=r.get("capability_snapshot_id"),
+                        router_reason=r.get("router_reason"),
+                        attempted_modes=json.loads(r.get("attempted_modes") or "[]"),
+                        fallback_from=r.get("fallback_from"),
+                        fallback_to=r.get("fallback_to"),
+                        fallback_reason=r.get("fallback_reason"),
+                        tool_name=r.get("tool_name"),
+                        origin=r.get("origin"),
+                        side_effect_state=r.get("side_effect_state") or "not_started",
+                        duration_ms=r.get("duration_ms"),
+                        input_tokens=r.get("input_tokens") or 0,
+                        output_tokens=r.get("output_tokens") or 0,
+                        estimated_cost=r.get("estimated_cost") or 0.0,
+                        router_mode=r.get("router_mode") or "legacy",
+                        executed_mode=r.get("executed_mode") or "visual_grounded",
+                        shadow_mode=r.get("shadow_mode"),
+                        shadow_target=r.get("shadow_target"),
+                        shadow_confidence=r.get("shadow_confidence"),
+                        shadow_match_result=r.get("shadow_match_result"),
+                        browser_session_id=r.get("browser_session_id"),
+                        page_id=r.get("page_id"),
+                        navigation_epoch=r.get("navigation_epoch"),
+                        extra=json.loads(r.get("extra_json") or "{}"),
                     )
                 )
             return events

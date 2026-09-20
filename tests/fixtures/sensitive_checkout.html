@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout & Account Page</title>
+</head>
+<body>
+    <h1>Order Summary</h1>
+    
+    <!-- Non-sensitive business data (PRECISION: MUST NOT BE REDACTED) -->
+    <div id="order-info">
+        <p id="order-id">Order ID: ORD-2026-987654</p>
+        <p id="product-name">Item: Apple MacBook Pro 16-inch M3 Max</p>
+        <p id="product-price">Price: $3,499.00 USD</p>
+        <p id="tracking-num">Tracking: TRACK-1Z9999999999999999</p>
+        <p id="customer-info">Customer: Alice Walker (alice.walker@example.com)</p>
+    </div>
+
+    <!-- Sensitive data (COMPLETENESS: MUST BE REDACTED) -->
+    <div id="sensitive-section">
+        <!-- Text secrets -->
+        <p id="card-text">Saved card: 4532 1234 5678 9010</p>
+        <p id="cvc-text">Security Code: cvc: 789</p>
+        <p id="api-key-text">OpenAI API Key: sk-live-51MzIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY</p>
+        <p id="gh-token-text">GitHub PAT: ghp_abcdef1234567890abcdef1234567890abcd</p>
+
+        <!-- Sensitive attributes -->
+        <div id="widget-card" aria-label="Card number 4532 9999 8888 7777">Payment Widget</div>
+
+        <!-- Form fields -->
+        <form id="payment-form">
+            <label for="pwd">Password</label>
+            <input type="password" id="pwd" name="user_password" value="SuperSecretP@ss!">
+
+            <label for="cc-num">Credit Card</label>
+            <input type="text" id="cc-num" name="card_number" value="5425-2334-3211-4567">
+
+            <label for="cvv">CVV</label>
+            <input type="text" id="cvv" name="cvv_code" placeholder="cvv" value="456">
+
+            <label for="sess">Session Token</label>
+            <input type="text" id="sess" name="session_id" value="sess_prod_token_abc123">
+
+            <!-- Non-sensitive form fields (PRECISION) -->
+            <label for="promo">Promo Code</label>
+            <input type="text" id="promo" name="promo_code" placeholder="Enter coupon" value="DISCOUNT20">
+
+            <button type="submit" id="btn-submit">Place Order</button>
+        </form>
+    </div>
+</body>
+</html>

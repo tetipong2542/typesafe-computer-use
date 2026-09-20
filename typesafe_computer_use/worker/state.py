@@ -133,7 +133,7 @@ class TaskEvent:
     screenshot_id: str | None = None
     result: str | None = None
     error: str | None = None
-    # Extended Hybrid Interaction fields
+    # Extended Hybrid Interaction & Shadow Telemetry fields
     interaction_mode: str = "visual_grounded"
     verification_mode: str = "visual_grounded"
     adapter: str = "VisualComputerUseAdapter"
@@ -150,6 +150,15 @@ class TaskEvent:
     input_tokens: int = 0
     output_tokens: int = 0
     estimated_cost: float = 0.0
+    router_mode: str = "legacy"
+    executed_mode: str = "visual_grounded"
+    shadow_mode: str | None = None
+    shadow_target: str | None = None
+    shadow_confidence: float | None = None
+    shadow_match_result: str | None = None
+    browser_session_id: str | None = None
+    page_id: str | None = None
+    navigation_epoch: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

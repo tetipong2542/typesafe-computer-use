@@ -81,8 +81,28 @@ class VisualComputerUseAdapter(InteractionAdapter):
                 error="Input is currently locked (Emergency stop or Takeover active)",
             )
 
-        # In Phase 2A, this adapter interfaces with the existing actions.perform
-        # The execution logic delegates to the proven core pipeline
+        # If an action callable is provided, execute it within the adapter boundary
+        action_fn = request.arguments.get("action_fn")
+        if callable(action_fn):
+            try:
+                result_val = action_fn()
+            except Exception as e:
+                return InteractionResult(
+                    mode=self.mode,
+                    adapter="VisualComputerUseAdapter",
+                    action=request.action,
+                    target=request.target,
+                    arguments=request.arguments,
+                    confidence=float(request.arguments.get("confidence", 0.90)),
+                    risk=RiskLevel.NORMAL,
+                    side_effect_state=SideEffectState.CONFIRMED_FAILURE,
+                    duration_ms=(time.perf_counter() - start_time) * 1000,
+                    result=None,
+                    error=f"Visual action failed: {e}",
+                )
+        else:
+            result_val = "Executed visually via TypeSafe core pipeline"
+
         duration_ms = (time.perf_counter() - start_time) * 1000
 
         return InteractionResult(
@@ -95,7 +115,7 @@ class VisualComputerUseAdapter(InteractionAdapter):
             risk=RiskLevel.NORMAL,
             side_effect_state=SideEffectState.CONFIRMED_SUCCESS,
             duration_ms=duration_ms,
-            result="Executed visually via TypeSafe core pipeline",
+            result=result_val,
         )
 
     async def verify(self, expectation: VerificationExpectation) -> VerificationResult:

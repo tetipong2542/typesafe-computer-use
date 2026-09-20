@@ -35,6 +35,7 @@ class ExecutionGate:
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
+        self._is_gate_closed: bool = False
         self._in_flight_tasks: dict[str, asyncio.Task[Any]] = {}
         self._cancellation_callbacks: dict[str, Callable[[], Coroutine[Any, Any, None]]] = {}
 
@@ -50,8 +51,22 @@ class ExecutionGate:
         """Reset singleton instance (useful for test isolation)."""
         cls._instance = None
 
+    def close_gate(self, reason: str = "Gate closed") -> None:
+        """Explicitly close the gate to reject any new structured or visual actions."""
+        self._is_gate_closed = True
+        logger.warning("ExecutionGate closed: %s", reason)
+
+    def open_gate(self) -> None:
+        """Reopen the gate when resuming or resetting."""
+        self._is_gate_closed = False
+        logger.info("ExecutionGate reopened")
+
     async def check_gate_or_raise(self, task_id: str | None = None, db: WorkerDatabase | None = None) -> None:
         """Check whether execution is permitted. Raises exception if locked or paused."""
+        # 0. Check gate-level lock
+        if self._is_gate_closed:
+            raise ExecutionGateLockedError("Execution gate locked: Safety gate has been explicitly closed.")
+
         # 1. Check physical input lock (/tmp/typesafe_input_locked and memory flag)
         if is_input_locked():
             raise ExecutionGateLockedError("Execution gate locked: System input lock is currently active.")
@@ -77,6 +92,8 @@ class ExecutionGate:
         cancel_cb: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Register an in-flight operation so it can be aborted immediately on takeover."""
+        if self._is_gate_closed or is_input_locked():
+            raise ExecutionGateLockedError("Cannot register in-flight action: Execution gate is closed.")
         if task:
             self._in_flight_tasks[execution_id] = task
         if cancel_cb:
@@ -87,11 +104,14 @@ class ExecutionGate:
         self._in_flight_tasks.pop(execution_id, None)
         self._cancellation_callbacks.pop(execution_id, None)
 
-    async def cancel_all_in_flight(self, reason: str = "Safety gate triggered") -> int:
-        """Cancel all registered in-flight operations across all adapters."""
+    async def cancel_all_in_flight(self, reason: str = "Safety gate triggered", timeout: float = 3.0) -> int:
+        """Close gate, cancel all registered in-flight operations, and await their termination within timeout."""
+        # 1. Close gate first so no new actions can be initiated or registered
+        self.close_gate(reason)
+
         cancelled_count = 0
 
-        # Execute registered custom cancellation callbacks
+        # 2. Execute custom cancellation callbacks
         callbacks = list(self._cancellation_callbacks.values())
         self._cancellation_callbacks.clear()
         for cb in callbacks:
@@ -101,22 +121,31 @@ class ExecutionGate:
             except Exception as e:
                 logger.warning("Error running cancellation callback: %s", e)
 
-        # Cancel registered asyncio tasks
-        tasks = list(self._in_flight_tasks.values())
+        # 3. Cancel registered asyncio tasks
+        tasks = [t for t in self._in_flight_tasks.values() if not t.done()]
         self._in_flight_tasks.clear()
         for t in tasks:
-            if not t.done():
-                t.cancel()
-                cancelled_count += 1
+            t.cancel()
+            cancelled_count += 1
 
-        logger.info("Cancelled %d in-flight operations (reason: %s)", cancelled_count, reason)
+        # 4. Await task completion within timeout to guarantee no operations remain running
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                logger.error("In-flight tasks did not terminate cleanly within %.1fs timeout", timeout)
+
+        logger.info("Cancelled and awaited %d in-flight operations (reason: %s)", cancelled_count, reason)
         return cancelled_count
 
     async def trigger_emergency_stop(self, task_id: str | None = None, db: WorkerDatabase | None = None) -> None:
         """Enforce emergency stop: lock input immediately and cancel all active operations."""
-        # 1. Lock input first
+        # 1. Lock physical input first
         set_input_lock(True)
-        # 2. Cancel all in-flight operations
+        # 2. Close gate and await cancellation of in-flight tasks
         await self.cancel_all_in_flight(reason="Emergency Stop")
         # 3. Update DB state if provided
         if task_id and db:

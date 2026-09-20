@@ -25,15 +25,25 @@ def get_interaction_router_mode() -> RouterMode:
     
     Precedence:
     1. INTERACTION_ROUTER_MODE environment variable ('legacy', 'shadow', 'hybrid').
+       Note: 'hybrid' is fail-closed to 'shadow' until Phase 2D structured execution is verified.
     2. INTERACTION_ROUTER_ENABLED backward compatibility mapping:
        - 'false' / '0' / 'no' -> RouterMode.LEGACY
        - 'true' / '1' / 'yes' -> RouterMode.SHADOW
     3. Default: RouterMode.LEGACY (100% visual-only).
     """
+    import logging
+    logger = logging.getLogger("typesafe.adapters")
+
     raw_mode = os.environ.get("INTERACTION_ROUTER_MODE")
     if raw_mode:
         raw_mode_clean = raw_mode.strip().lower()
-        if raw_mode_clean in (RouterMode.LEGACY, RouterMode.SHADOW, RouterMode.HYBRID):
+        if raw_mode_clean == RouterMode.HYBRID:
+            logger.warning(
+                "INTERACTION_ROUTER_MODE=hybrid requested, but structured hybrid execution "
+                "is reserved for Phase 2D. Failing closed to SHADOW mode for safety."
+            )
+            return RouterMode.SHADOW
+        if raw_mode_clean in (RouterMode.LEGACY, RouterMode.SHADOW):
             return RouterMode(raw_mode_clean)
 
     # Fallback to boolean flag backward compatibility

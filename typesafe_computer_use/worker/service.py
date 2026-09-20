@@ -15,11 +15,13 @@ from typesafe_sdk import TypeSafeClient
 
 from .. import config, macos
 from ..actions import Context, is_noop, perform
+from ..adapters import InteractionMode, InteractionRequest, InteractionResult, VerificationExpectation
 from ..config import DEFAULT_DELAY, DEFAULT_MIN_CONFIDENCE, DEFAULT_STEPS, MAX_OPTIONS
 from ..decide import Decision, decide
 from ..models import Abort
 from ..perception import OcrCache, capture, perceive
 from ..report import Log, annotate, ax_count, render_payload
+from ..router import ShadowDecision, ShadowInteractionRouter
 from ..writer import make_writer
 from .db import WorkerDatabase
 from .events import EventHub
@@ -128,15 +130,36 @@ class WorkerService:
         db: WorkerDatabase,
         event_hub: EventHub,
         policy_engine: PolicyEngine | None = None,
+        router: ShadowInteractionRouter | None = None,
         base_dir: Path | None = None,
     ):
         self.db = db
         self.event_hub = event_hub
         self.policy_engine = policy_engine or PolicyEngine()
+        self.router = router or ShadowInteractionRouter()
         self.base_dir = Path(base_dir or Path.cwd())
         self._controllers: dict[str, TaskController] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._event_counter = 0
+
+    def _route_and_execute_sync(
+        self,
+        request: InteractionRequest,
+        expectation: VerificationExpectation | None = None,
+    ) -> tuple[InteractionResult, ShadowDecision]:
+        """Synchronous wrapper for routing and executing actions via ShadowInteractionRouter."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+
+        if loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                self.router.route_and_execute(request, expectation),
+                loop,
+            )
+            return future.result(timeout=15.0)
+        return loop.run_until_complete(self.router.route_and_execute(request, expectation))
 
     def next_event_id(self, task_id: str) -> str:
         self._event_counter += 1
@@ -161,6 +184,7 @@ class WorkerService:
         error: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> TaskEvent:
+        extra_dict = extra or {}
         event = TaskEvent(
             event_id=self.next_event_id(task_id),
             task_id=task_id,
@@ -176,7 +200,22 @@ class WorkerService:
             screenshot_id=screenshot_id,
             result=result,
             error=error,
-            extra=extra or {},
+            interaction_mode=extra_dict.get("executed_mode") or "visual_grounded",
+            verification_mode=extra_dict.get("verification_mode") or "visual_grounded",
+            adapter=extra_dict.get("adapter") or "VisualComputerUseAdapter",
+            router_reason=extra_dict.get("router_reason"),
+            side_effect_state=extra_dict.get("side_effect_state") or "not_started",
+            duration_ms=extra_dict.get("duration_ms"),
+            router_mode=extra_dict.get("router_mode") or "legacy",
+            executed_mode=extra_dict.get("executed_mode") or "visual_grounded",
+            shadow_mode=extra_dict.get("shadow_mode"),
+            shadow_target=extra_dict.get("shadow_target"),
+            shadow_confidence=extra_dict.get("shadow_confidence"),
+            shadow_match_result=extra_dict.get("shadow_match_result"),
+            browser_session_id=extra_dict.get("browser_session_id"),
+            page_id=extra_dict.get("page_id"),
+            navigation_epoch=extra_dict.get("navigation_epoch"),
+            extra=extra_dict,
         )
         await self.event_hub.publish(event)
         return event
@@ -693,11 +732,28 @@ class WorkerService:
                         outcome = "stopped"
                         break
 
-                    # 4. Perform Action
+                    # 4. Perform Action via ShadowInteractionRouter
                     with controller._action_lock:
                         controller.is_action_in_progress = True
                         try:
-                            what = perform(decision, screen, items, ctx)
+                            def do_visual_perform(d=decision, s=screen, it=items, c=ctx):
+                                return perform(d, s, it, c)
+
+
+                            target_str = target_text or decision.chosen
+                            req = InteractionRequest(
+                                mode=InteractionMode.VISUAL_GROUNDED,
+                                action=decision.kind.choice,
+                                target=target_str,
+                                arguments={
+                                    "action_fn": do_visual_perform,
+                                    "confidence": decision.confidence,
+                                },
+                                execution_id=f"exec_{task_id}_{step}",
+                                context={"task_id": task_id, "step": step, "url": screen.url},
+                            )
+                            res, shadow_dec = self._route_and_execute_sync(req)
+                            what = str(res.result)
                         finally:
                             controller.is_action_in_progress = False
 
@@ -706,7 +762,10 @@ class WorkerService:
                     timing["total"] = round(time.perf_counter() - step_started, 3)
                     timings.append(timing)
 
-                    # Multi-point Trace (3): Post-Action
+                    # Multi-point Trace (3): Post-Action with Shadow Telemetry
+                    browser_session_id = getattr(getattr(getattr(self.router, "dom_adapter", None), "session_manager", None), "session_id", "")
+                    nav_epoch = getattr(getattr(getattr(self.router, "dom_adapter", None), "session_manager", None), "get_navigation_epoch", lambda: 0)()
+
                     self.emit_event_sync(
                         task_id=task_id,
                         run_id=run_id,
@@ -718,6 +777,21 @@ class WorkerService:
                         confidence=decision.confidence,
                         result=what,
                         screenshot_id=annotated_filename,
+                        extra={
+                            "router_mode": shadow_dec.rollout_mode.value,
+                            "executed_mode": shadow_dec.executed_mode.value,
+                            "shadow_mode": shadow_dec.shadow_mode.value if shadow_dec.shadow_mode else None,
+                            "shadow_target": shadow_dec.shadow_target,
+                            "shadow_confidence": shadow_dec.shadow_confidence,
+                            "shadow_match_result": shadow_dec.shadow_match_result,
+                            "router_reason": shadow_dec.router_reason,
+                            "browser_session_id": browser_session_id,
+                            "page_id": shadow_dec.metadata.get("page_id", "default"),
+                            "navigation_epoch": nav_epoch,
+                            "side_effect_state": res.side_effect_state.value,
+                            "duration_ms": res.duration_ms,
+                            "adapter": res.adapter,
+                        },
                     )
 
                     # Stall detection

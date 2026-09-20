@@ -48,8 +48,9 @@ def test_rollout_mode_detection(monkeypatch: pytest.MonkeyPatch):
     assert get_interaction_router_mode() == RouterMode.SHADOW
     assert is_interaction_router_enabled() is True
 
+    # 4. Hybrid mode MUST fail-closed to shadow in Phase 2B
     monkeypatch.setenv("INTERACTION_ROUTER_MODE", "hybrid")
-    assert get_interaction_router_mode() == RouterMode.HYBRID
+    assert get_interaction_router_mode() == RouterMode.SHADOW
     assert is_interaction_router_enabled() is True
 
 

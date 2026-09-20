@@ -33,6 +33,12 @@ class AmbiguousTargetError(BrowserError):
     pass
 
 
+class AmbiguousPageError(BrowserError):
+    """Raised when multiple browser tabs/windows exist and target page cannot be resolved unambiguously."""
+    pass
+
+
 class BrowserSecurityError(BrowserError):
     """Raised when a security guardrail is violated (e.g. non-loopback CDP host binding)."""
     pass
+

@@ -14,6 +14,7 @@ from typing import Any
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
 from .errors import (
+    AmbiguousPageError,
     BrowserCrashError,
     BrowserNotRunningError,
     BrowserSecurityError,
@@ -61,11 +62,21 @@ class BrowserSessionManager:
         page_key = str(id(target_page))
         return self._navigation_epochs.get(page_key, 0)
 
-    async def get_active_page(self) -> Page:
-        """Get or resolve active page deterministically."""
+    async def get_active_page(self, page_id: str | None = None) -> Page:
+        """Get or resolve active page deterministically. Raises AmbiguousPageError if ambiguous."""
         async with self._lock:
             if not self.is_connected:
                 await self._connect_internal()
+
+            if page_id is not None:
+                if not self._context:
+                    raise BrowserNotRunningError("No browser context available")
+                for p in self._context.pages:
+                    if str(id(p)) == page_id and not p.is_closed():
+                        self._active_page = p
+                        self._attach_page_listeners(p)
+                        return p
+                raise AmbiguousPageError(f"Target page with id {page_id} not found among active pages")
 
             if self._active_page is not None and not self._active_page.is_closed():
                 return self._active_page
@@ -74,8 +85,15 @@ class BrowserSessionManager:
             self._active_page = await self._resolve_active_page()
             return self._active_page
 
+    async def select_page(self, page_id: str) -> Page:
+        """Explicitly select a specific page as active by its ID."""
+        return await self.get_active_page(page_id=page_id)
+
     async def _resolve_active_page(self) -> Page:
-        """Deterministic selection of the primary user-facing tab."""
+        """Deterministic selection of the primary user-facing tab.
+
+        Raises AmbiguousPageError if multiple open user-facing tabs exist without explicit selection.
+        """
         if not self._context:
             raise BrowserNotRunningError("No active browser context available")
 
@@ -87,9 +105,14 @@ class BrowserSessionManager:
             and not p.url.startswith(("chrome://", "devtools://", "chrome-extension://"))
         ]
 
-        if user_pages:
-            # Pick the last interacted or most recently opened user page
-            selected = user_pages[-1]
+        if len(user_pages) > 1:
+            urls = [p.url for p in user_pages]
+            raise AmbiguousPageError(
+                f"Multiple open browser pages detected ({len(user_pages)} pages: {urls}). "
+                "Explicit page_id or target URL required to avoid ambiguous execution."
+            )
+        elif len(user_pages) == 1:
+            selected = user_pages[0]
         elif pages and not pages[0].is_closed():
             selected = pages[0]
         else:
