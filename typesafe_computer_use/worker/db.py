@@ -66,7 +66,25 @@ class WorkerDatabase:
                     FOREIGN KEY (task_id) REFERENCES tasks(task_id)
                 );
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS approvals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    approval_id TEXT UNIQUE NOT NULL,
+                    task_id TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    step INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    target TEXT,
+                    screenshot_hash TEXT NOT NULL,
+                    action_fingerprint TEXT NOT NULL,
+                    expires_at REAL NOT NULL,
+                    consumed_at REAL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+                );
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id, event_id);")
             conn.commit()
 
     def recover_interrupted_tasks(self) -> list[str]:
@@ -250,3 +268,76 @@ class WorkerDatabase:
                     )
                 )
             return events
+
+    def create_approval(
+        self,
+        approval_id: str,
+        task_id: str,
+        event_id: str,
+        step: int,
+        action: str,
+        target: str | None,
+        screenshot_hash: str,
+        action_fingerprint: str,
+        ttl_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        now = time.time()
+        expires_at = now + ttl_seconds
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO approvals (
+                    approval_id, task_id, event_id, step, action, target,
+                    screenshot_hash, action_fingerprint, expires_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    approval_id,
+                    task_id,
+                    event_id,
+                    step,
+                    action,
+                    target,
+                    screenshot_hash,
+                    action_fingerprint,
+                    expires_at,
+                    now,
+                ),
+            )
+            conn.commit()
+        return {
+            "approval_id": approval_id,
+            "task_id": task_id,
+            "event_id": event_id,
+            "step": step,
+            "action": action,
+            "target": target,
+            "screenshot_hash": screenshot_hash,
+            "action_fingerprint": action_fingerprint,
+            "expires_at": expires_at,
+        }
+
+    def get_active_approval(self, task_id: str, event_id: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM approvals
+                WHERE task_id = ? AND event_id = ? AND consumed_at IS NULL AND expires_at > ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (task_id, event_id, now),
+            ).fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    def consume_approval(self, approval_id: str) -> bool:
+        now = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE approvals SET consumed_at = ? WHERE approval_id = ? AND consumed_at IS NULL",
+                (now, approval_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0

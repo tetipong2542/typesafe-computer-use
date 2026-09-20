@@ -51,34 +51,46 @@ def accessibility_trusted() -> bool:
 
 # ------------------------------------------------------------------ input lock & exclusive takeover
 
+_INPUT_LOCK_FILE = Path("/tmp/typesafe_input_locked")
 _INPUT_LOCKED: bool = False
 
 
 def set_input_lock(locked: bool) -> None:
     global _INPUT_LOCKED
     _INPUT_LOCKED = locked
+    try:
+        if locked:
+            _INPUT_LOCK_FILE.touch()
+        elif _INPUT_LOCK_FILE.exists():
+            _INPUT_LOCK_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def is_input_locked() -> bool:
-    return _INPUT_LOCKED
+    return _INPUT_LOCKED or _INPUT_LOCK_FILE.exists()
 
 
 # ------------------------------------------------------------------ input
 
 
 def _post(event) -> None:
-    if _INPUT_LOCKED:
+    if is_input_locked():
         return
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
     time.sleep(0.04)
 
 
 def click_at(point: tuple[float, float]) -> None:
+    if is_input_locked():
+        return
     for kind in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         _post(Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft))
 
 
 def press(key: str, command: bool = False) -> None:
+    if is_input_locked():
+        return
     code = KEYCODES[key]
     for down in (True, False):
         event = Quartz.CGEventCreateKeyboardEvent(None, code, down)
@@ -88,6 +100,8 @@ def press(key: str, command: bool = False) -> None:
 
 
 def type_text(text: str) -> None:
+    if is_input_locked():
+        return
     for ch in text:
         for down in (True, False):
             event = Quartz.CGEventCreateKeyboardEvent(None, 0, down)
@@ -96,12 +110,16 @@ def type_text(text: str) -> None:
 
 
 def clear_field() -> None:
+    if is_input_locked():
+        return
     press("a", command=True)
     press("delete")
 
 
 def scroll(lines: int) -> None:
     """Scroll events go to the view under the cursor, so park it over the frontmost window first."""
+    if is_input_locked():
+        return
     center = frontmost_window_center()
     if center is not None:
         _post(Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, center, Quartz.kCGMouseButtonLeft))
@@ -241,7 +259,7 @@ AX_PRESS = "AXPress"
 
 def ax_press(ref) -> bool:
     """Send AXPress to an element."""
-    if _INPUT_LOCKED:
+    if is_input_locked():
         return False
     try:
         return AS.AXUIElementPerformAction(ref, AX_PRESS) == 0
@@ -251,7 +269,7 @@ def ax_press(ref) -> bool:
 
 def ax_focus(ref) -> bool:
     """Give an element the keyboard focus."""
-    if _INPUT_LOCKED:
+    if is_input_locked():
         return False
     try:
         return AS.AXUIElementSetAttributeValue(ref, AS.kAXFocusedAttribute, True) == 0
@@ -261,7 +279,7 @@ def ax_focus(ref) -> bool:
 
 def ax_set_value(ref, text: str) -> bool:
     """Write an element's value. A read-only or unwilling element reports an error."""
-    if _INPUT_LOCKED:
+    if is_input_locked():
         return False
     try:
         return AS.AXUIElementSetAttributeValue(ref, AS.kAXValueAttribute, text) == 0

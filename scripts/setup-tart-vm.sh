@@ -58,9 +58,11 @@ echo "   - Enable 'Screen Recording' for Terminal"
 echo "   - Enable 'Remote Login' and 'Screen Sharing' (for VNC Takeover)"
 echo "   - Change default password (admin / admin)"
 echo ""
-echo "3. Run the Worker API inside the VM:"
-echo "   cd /Volumes/My\\ Shared\\ Files/workspace"
-echo "   uv run clicker-worker"
+echo "3. Install Worker runtime on VM local disk (avoids VirtIO-FS startup mount race):
+   rsync -av --exclude='.venv' --exclude='runs' "/Volumes/My Shared Files/workspace/" ~/typesafe-computer-use/
+   cd ~/typesafe-computer-use
+   uv sync
+   uv run clicker-worker"
 echo ""
 echo "4. Obtain VM IP from Host:"
 echo "   VM_IP=\$(tart ip ${VM_NAME})"

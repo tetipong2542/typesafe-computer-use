@@ -2,11 +2,34 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from PIL import Image
+
+POLICY_MIN_CONFIDENCE_FLOOR = 0.80
 DEFAULT_NORMAL_CONFIDENCE_THRESHOLD = 0.80
+
+
+def clamp_confidence_to_floor(val: float) -> float:
+    """Enforce server policy floor. Client cannot lower threshold below floor."""
+    return max(val, POLICY_MIN_CONFIDENCE_FLOOR)
+
+
+def compute_screenshot_hash(image: Image.Image) -> str:
+    """Compute deterministic SHA-256 hash of an image."""
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return hashlib.sha256(buffer.getvalue()).hexdigest()
+
+
+def compute_action_fingerprint(action: str, target: str | None, step: int) -> str:
+    """Compute SHA-256 fingerprint of an action tuple."""
+    raw = f"{action}:{target or ''}:{step}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 CRITICAL_PATTERNS = [
     r"\bdelete\b",

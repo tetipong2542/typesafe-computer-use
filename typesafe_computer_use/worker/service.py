@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import os
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,13 @@ from ..report import Log, annotate, ax_count, render_payload
 from ..writer import make_writer
 from .db import WorkerDatabase
 from .events import EventHub
-from .policy import PolicyDecision, PolicyEngine
+from .policy import (
+    PolicyDecision,
+    PolicyEngine,
+    clamp_confidence_to_floor,
+    compute_action_fingerprint,
+    compute_screenshot_hash,
+)
 from .state import EventPhase, TaskEvent, TaskRecord, TaskState, can_transition
 
 
@@ -41,13 +47,17 @@ class TaskController:
         self.is_action_in_progress = False
         self.human_approved = False
         self.rebuild_perception_needed = False
+        self.current_review_event_id: str | None = None
+        self.current_screenshot_hash: str | None = None
+        self.current_action_fingerprint: str | None = None
+        self.current_step: int = 0
+        self.active_approval_id: str | None = None
+        self.emergency_stopped: bool = False
 
     def request_pause(self) -> None:
         self._pause_event.clear()
 
-    def request_resume(self, approve: bool = False) -> None:
-        if approve:
-            self.human_approved = True
+    def request_resume(self) -> None:
         self._pause_event.set()
 
     def request_stop(self) -> None:
@@ -55,10 +65,15 @@ class TaskController:
         self._pause_event.set()
 
     def request_emergency_stop(self) -> None:
+        self.emergency_stopped = True
         self._emergency_stop_event.set()
         self._stop_event.set()
         self._pause_event.set()
         macos.set_input_lock(True)
+
+    def request_reset(self) -> None:
+        self.emergency_stopped = False
+        macos.set_input_lock(False)
 
     def request_takeover(self) -> None:
         self._takeover_event.set()
@@ -162,8 +177,8 @@ class WorkerService:
     def create_task(self, goal: str, config_override: dict[str, Any] | None = None) -> TaskRecord:
         """Create and queue a new background computer use task."""
         now_str = time.strftime("%Y%m%d-%H%M%S")
-        task_id = f"task_{now_str}_{os.urandom(3).hex()}"
-        run_id = f"run_{now_str}"
+        task_id = f"task_{now_str}_{uuid.uuid4().hex[:6]}"
+        run_id = f"run_{now_str}_{uuid.uuid4().hex[:8]}"
 
         cfg = {
             "act": True,
@@ -173,6 +188,8 @@ class WorkerService:
             "browser": config.browser(),
             **(config_override or {}),
         }
+        # Enforce server policy floor on min_confidence
+        cfg["min_confidence"] = clamp_confidence_to_floor(float(cfg.get("min_confidence", DEFAULT_MIN_CONFIDENCE)))
 
         task = self.db.create_task(task_id=task_id, goal=goal, config=cfg, run_id=run_id)
         controller = TaskController(task_id=task_id, run_id=run_id)
@@ -219,16 +236,71 @@ class WorkerService:
         )
         return True
 
-    def resume_task(self, task_id: str, approve: bool = False) -> bool:
+    def create_approval(
+        self,
+        task_id: str,
+        event_id: str,
+        step: int,
+        action: str,
+        target: str | None,
+        screenshot_hash: str,
+        action_fingerprint: str,
+    ) -> tuple[bool, dict[str, Any] | str]:
+        """Validate and grant a one-time approval for a specific event and perception state."""
         task = self.db.get_task(task_id)
         controller = self._controllers.get(task_id)
         if not task or not controller:
-            return False
+            return False, "Task not found"
+
+        if task.state != TaskState.AWAITING_REVIEW:
+            return False, f"Task is not in awaiting_review state (current: {task.state.value})"
+
+        if event_id != controller.current_review_event_id:
+            return False, f"event_id mismatch: expected {controller.current_review_event_id}, got {event_id}"
+
+        if step != controller.current_step:
+            return False, f"step mismatch: expected {controller.current_step}, got {step}"
+
+        expected_fingerprint = compute_action_fingerprint(action, target, step)
+        if action_fingerprint != expected_fingerprint or action_fingerprint != controller.current_action_fingerprint:
+            return False, "action_fingerprint mismatch"
+
+        if screenshot_hash != controller.current_screenshot_hash:
+            return False, "screenshot_hash mismatch (perception revision has changed)"
+
+        approval_id = f"appr_{uuid.uuid4().hex[:12]}"
+        record = self.db.create_approval(
+            approval_id=approval_id,
+            task_id=task_id,
+            event_id=event_id,
+            step=step,
+            action=action,
+            target=target,
+            screenshot_hash=screenshot_hash,
+            action_fingerprint=action_fingerprint,
+            ttl_seconds=300.0,
+        )
+        controller.active_approval_id = approval_id
+        controller.human_approved = True
+        return True, record
+
+    def resume_task(self, task_id: str) -> tuple[bool, str]:
+        task = self.db.get_task(task_id)
+        controller = self._controllers.get(task_id)
+        if not task or not controller:
+            return False, "Task not found"
 
         if task.state not in (TaskState.PAUSED, TaskState.AWAITING_REVIEW):
-            return False
+            return False, f"Task cannot be resumed from state {task.state.value}"
 
-        controller.request_resume(approve=approve)
+        if task.state == TaskState.AWAITING_REVIEW:
+            if not controller.active_approval_id:
+                return False, "Cannot resume task in awaiting_review without an explicit approval via POST /tasks/:id/approvals/:event_id"
+            active = self.db.get_active_approval(task_id, controller.current_review_event_id or "")
+            if not active or active["approval_id"] != controller.active_approval_id:
+                return False, "No active or valid approval found (it may have expired or already been consumed)"
+
+        controller.request_resume()
         self.db.update_task(task_id, state=TaskState.RUNNING)
         self.emit_event_sync(
             task_id=task_id,
@@ -238,7 +310,16 @@ class WorkerService:
             state=TaskState.RUNNING,
             result="Task resumed",
         )
-        return True
+        return True, "Task resumed"
+
+    def reset_task(self, task_id: str) -> tuple[bool, str]:
+        """Explicitly reset an emergency-stopped task and release input lock."""
+        controller = self._controllers.get(task_id)
+        if controller:
+            controller.request_reset()
+        else:
+            macos.set_input_lock(False)
+        return True, "Emergency lock reset. Synthetic input unlocked."
 
     def stop_task(self, task_id: str) -> bool:
         task = self.db.get_task(task_id)
@@ -468,30 +549,16 @@ class WorkerService:
                         result=policy_res.reason,
                     )
 
-                    if policy_res.decision == PolicyDecision.BLOCKED:
-                        log(f"Step {step}: Action BLOCKED by policy: {policy_res.reason}")
-                        self.db.update_task(task_id, state=TaskState.AWAITING_REVIEW, outcome="Policy Blocked")
-                        self.emit_event_sync(
-                            task_id=task_id,
-                            run_id=run_id,
-                            step=step,
-                            phase=EventPhase.STATE_CHANGED,
-                            state=TaskState.AWAITING_REVIEW,
-                            action=decision.kind.choice,
-                            target=target_text,
-                            policy_decision="BLOCKED",
-                            error=policy_res.reason,
-                        )
-                        # Wait in review state
-                        controller.request_pause()
-                        if not self._wait_for_review_or_resume(controller):
-                            outcome = "stopped"
-                            break
+                    if policy_res.decision in (PolicyDecision.BLOCKED, PolicyDecision.AWAITING_REVIEW):
+                        is_blocked = policy_res.decision == PolicyDecision.BLOCKED
+                        decision_label = "BLOCKED" if is_blocked else "AWAITING_REVIEW"
+                        log(f"Step {step}: Action {decision_label} by policy: {policy_res.reason}")
 
-                    elif policy_res.decision == PolicyDecision.AWAITING_REVIEW:
-                        log(f"Step {step}: Low confidence or sensitive action awaiting review: {policy_res.reason}")
-                        self.db.update_task(task_id, state=TaskState.AWAITING_REVIEW)
-                        self.emit_event_sync(
+                        screenshot_hash = compute_screenshot_hash(screen.image)
+                        action_fingerprint = compute_action_fingerprint(decision.kind.choice, target_text, step)
+
+                        self.db.update_task(task_id, state=TaskState.AWAITING_REVIEW, outcome="Policy Blocked" if is_blocked else None)
+                        awaiting_event = self.emit_event_sync(
                             task_id=task_id,
                             run_id=run_id,
                             step=step,
@@ -500,13 +567,48 @@ class WorkerService:
                             action=decision.kind.choice,
                             target=target_text,
                             confidence=decision.confidence,
-                            policy_decision="AWAITING_REVIEW",
+                            policy_decision=decision_label,
                             result=policy_res.reason,
+                            screenshot_id=annotated_filename,
+                            extra={
+                                "screenshot_hash": screenshot_hash,
+                                "action_fingerprint": action_fingerprint,
+                                "step": step,
+                            },
                         )
+
+                        controller.current_review_event_id = awaiting_event.event_id
+                        controller.current_screenshot_hash = screenshot_hash
+                        controller.current_action_fingerprint = action_fingerprint
+                        controller.current_step = step
+                        controller.active_approval_id = None
+
+                        # Wait in review state
                         controller.request_pause()
                         if not self._wait_for_review_or_resume(controller):
                             outcome = "stopped"
                             break
+
+                        # When resumed: verify screenshot has NOT changed since approval
+                        if controller.active_approval_id:
+                            fresh_screen = capture(browser=ctx.browser)
+                            fresh_hash = compute_screenshot_hash(fresh_screen.image)
+                            if fresh_hash != controller.current_screenshot_hash:
+                                log(f"Step {step}: Screen changed after approval was granted! Revoking approval and re-perceiving.")
+                                self.emit_event_sync(
+                                    task_id=task_id,
+                                    run_id=run_id,
+                                    step=step,
+                                    phase=EventPhase.STATE_CHANGED,
+                                    state=TaskState.RUNNING,
+                                    result="Screen changed after approval; revoking approval and re-perceiving screen",
+                                )
+                                ocr_cache = OcrCache()
+                                controller.active_approval_id = None
+                                controller.human_approved = False
+                                continue
+                            self.db.consume_approval(controller.active_approval_id)
+                            controller.active_approval_id = None
 
                     # Stop conditions from decision model
                     if decision.stops:
@@ -577,9 +679,12 @@ class WorkerService:
             error_msg = str(e)
             log(f"Worker task error: {e}")
         finally:
-            macos.set_input_lock(False)
+            if not controller.emergency_stopped:
+                macos.set_input_lock(False)
             final_state = TaskState.SUCCEEDED if outcome in ("done", "succeeded") else TaskState.STOPPED
-            if outcome == "failed":
+            if controller.emergency_stopped:
+                final_state = TaskState.STOPPED
+            elif outcome == "failed":
                 final_state = TaskState.FAILED
 
             self.db.update_task(task_id, state=final_state, outcome=outcome, error=error_msg)

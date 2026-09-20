@@ -20,7 +20,10 @@ fi
 
 export WORKER_HOST="${WORKER_HOST:-0.0.0.0}"
 export WORKER_PORT="${WORKER_PORT:-8000}"
-export WORKER_AUTH_TOKEN="${WORKER_AUTH_TOKEN:-typesafe-worker-secret-token}"
+if [[ -z "${WORKER_AUTH_TOKEN:-}" ]]; then
+    export WORKER_AUTH_TOKEN="$(openssl rand -hex 32)"
+    echo "[Security] Generated secure WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN}"
+fi
 
 echo "=========================================================="
 echo " Starting typesafe-computer-use Worker API"
