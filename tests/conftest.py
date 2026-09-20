@@ -24,3 +24,22 @@ def make_item():
 def tmp_env(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CLICKER_TEST_KEY", raising=False)
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def isolate_test_input_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Ensure every test runs with an isolated input lock path under its own tmp_path.
+
+    Guarantees the test suite never touches or clears the production lock at /tmp/typesafe_input_locked.
+    """
+    from typesafe_computer_use import macos
+
+    test_lock = tmp_path / "typesafe_input_locked"
+    monkeypatch.setenv("TYPESAFE_INPUT_LOCK_PATH", str(test_lock))
+    macos.set_input_lock(False)
+    yield test_lock
+    macos.set_input_lock(False)
+    if test_lock.exists():
+        test_lock.unlink(missing_ok=True)
+
+

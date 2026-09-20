@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from typesafe_computer_use import macos
@@ -40,7 +39,7 @@ def test_emergency_stop_subprocess_termination(tmp_path):
 
     # 1. Input lock MUST be engaged
     assert macos.is_input_locked()
-    assert Path("/tmp/typesafe_input_locked").exists()
+    assert macos.get_input_lock_path().exists()
 
     # 2. Process must be terminated or killed
     assert proc.poll() is not None

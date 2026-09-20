@@ -44,29 +44,49 @@ fi
 echo "Configuring VM resources..."
 tart set "${VM_NAME}" --cpu "${CPU}" --memory "${RAM}" --display "${DISPLAY}"
 
-echo ""
-echo "=========================================================="
-echo " Setup complete! Next steps:"
-echo "=========================================================="
-echo "1. Start the VM with GUI to configure Accessibility permissions:"
-echo "   tart run --dir=workspace:\"$(pwd)\" ${VM_NAME}"
-echo ""
-echo "2. Inside the VM:"
-echo "   - Open System Settings > Privacy & Security"
-echo "   - Enable 'Accessibility' for Terminal"
-echo "   - Enable 'Screen Recording' for Terminal"
-echo "   - Enable 'Remote Login' and 'Screen Sharing' (for VNC Takeover)"
-echo "   - Change default password (admin / admin)"
-echo ""
-echo "3. Install Worker runtime on VM local disk (avoids VirtIO-FS startup mount race):
+cat <<EOF
+
+==========================================================
+ Setup complete! Next steps:
+==========================================================
+1. Start the VM with GUI to configure Accessibility permissions:
+   tart run --dir=workspace:"$(pwd)" ${VM_NAME}
+
+2. Inside the VM:
+   - Open System Settings > Privacy & Security
+   - Enable 'Accessibility' for Terminal
+   - Enable 'Screen Recording' for Terminal
+   - Enable 'Remote Login' and 'Screen Sharing' (for VNC Takeover)
+   - Change default password (admin / admin)
+
+3. Install Worker runtime on VM local disk (avoids VirtIO-FS startup mount race):
    rsync -av --exclude='.venv' --exclude='runs' "/Volumes/My Shared Files/workspace/" ~/typesafe-computer-use/
    cd ~/typesafe-computer-use
    uv sync
-   uv run clicker-worker"
-echo ""
-echo "4. Obtain VM IP from Host:"
-echo "   VM_IP=\$(tart ip ${VM_NAME})"
-echo "   echo \"VM IP: \${VM_IP}\""
-echo ""
-echo "5. You can now send goals to: http://\${VM_IP}:8000/tasks"
-echo "=========================================================="
+
+   # Configure guest-local secret (.env) with restricted permissions (chmod 600)
+   echo "WORKER_AUTH_TOKEN=\$(openssl rand -hex 32)" > .env
+   chmod 600 .env
+
+   # Install and bootstrap per-user LaunchAgent (Aqua/WindowServer session)
+   mkdir -p ~/Library/LaunchAgents
+   cp scripts/com.typesafe.worker.plist ~/Library/LaunchAgents/com.typesafe.worker.plist
+   plutil -lint ~/Library/LaunchAgents/com.typesafe.worker.plist
+   launchctl bootout "gui/\$(id -u)" ~/Library/LaunchAgents/com.typesafe.worker.plist 2>/dev/null || true
+   launchctl bootstrap "gui/\$(id -u)" ~/Library/LaunchAgents/com.typesafe.worker.plist
+   launchctl enable "gui/\$(id -u)/com.typesafe.worker"
+   launchctl kickstart -k "gui/\$(id -u)/com.typesafe.worker"
+
+   # Enable TCC permissions for the actual executing process:
+   # ~/typesafe-computer-use/.venv/bin/python
+   # In System Settings > Privacy & Security > Accessibility and Screen Recording
+
+4. Obtain VM IP from Host:
+   VM_IP=\$(tart ip ${VM_NAME})
+   echo "VM IP: \${VM_IP}"
+
+5. You can now run E2E verification from Host:
+   ./scripts/tart-preflight.sh
+   ./scripts/e2e-tart-worker.sh
+==========================================================
+EOF

@@ -6,6 +6,7 @@ A Linux adapter would provide the same functions over xdotool and AT-SPI.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import time
@@ -51,24 +52,33 @@ def accessibility_trusted() -> bool:
 
 # ------------------------------------------------------------------ input lock & exclusive takeover
 
-_INPUT_LOCK_FILE = Path("/tmp/typesafe_input_locked")
+DEFAULT_INPUT_LOCK_PATH = Path("/tmp/typesafe_input_locked")
+_INPUT_LOCK_FILE = DEFAULT_INPUT_LOCK_PATH
 _INPUT_LOCKED: bool = False
+
+
+def get_input_lock_path() -> Path:
+    """Resolve the active input lock file path, supporting environment override for test isolation."""
+    if override := os.environ.get("TYPESAFE_INPUT_LOCK_PATH"):
+        return Path(override)
+    return DEFAULT_INPUT_LOCK_PATH
 
 
 def set_input_lock(locked: bool) -> None:
     global _INPUT_LOCKED
     _INPUT_LOCKED = locked
+    lock_file = get_input_lock_path()
     try:
         if locked:
-            _INPUT_LOCK_FILE.touch()
-        elif _INPUT_LOCK_FILE.exists():
-            _INPUT_LOCK_FILE.unlink(missing_ok=True)
+            lock_file.touch()
+        elif lock_file.exists():
+            lock_file.unlink(missing_ok=True)
     except OSError:
         pass
 
 
 def is_input_locked() -> bool:
-    return _INPUT_LOCKED or _INPUT_LOCK_FILE.exists()
+    return _INPUT_LOCKED or get_input_lock_path().exists()
 
 
 # ------------------------------------------------------------------ input

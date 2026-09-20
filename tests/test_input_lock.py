@@ -1,24 +1,8 @@
 """Tests for input locking and emergency stop safety in typesafe_computer_use.macos."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from typesafe_computer_use import macos
-
-
-@pytest.fixture(autouse=True)
-def cleanup_input_lock():
-    """Ensure lock file is cleared before and after each test."""
-    macos.set_input_lock(False)
-    lock_file = Path("/tmp/typesafe_input_locked")
-    if lock_file.exists():
-        lock_file.unlink()
-    yield
-    macos.set_input_lock(False)
-    if lock_file.exists():
-        lock_file.unlink()
 
 
 def test_input_lock_file_and_state():
@@ -26,19 +10,20 @@ def test_input_lock_file_and_state():
 
     macos.set_input_lock(True)
     assert macos.is_input_locked()
-    assert Path("/tmp/typesafe_input_locked").exists()
+    assert macos.get_input_lock_path().exists()
 
     macos.set_input_lock(False)
     assert not macos.is_input_locked()
-    assert not Path("/tmp/typesafe_input_locked").exists()
+    assert not macos.get_input_lock_path().exists()
 
 
 def test_cross_process_file_lock_detection():
     # Simulate an external supervisor process touching the lock file
     macos._INPUT_LOCKED = False
-    Path("/tmp/typesafe_input_locked").touch()
+    macos.get_input_lock_path().touch()
 
     assert macos.is_input_locked()
+
 
 
 def test_quartz_calls_blocked_when_locked():
@@ -97,5 +82,5 @@ def test_boot_input_lock_recovery(tmp_path):
     restored = db.check_and_restore_input_lock()
     assert restored is True
     assert macos.is_input_locked()
-    assert Path("/tmp/typesafe_input_locked").exists()
+    assert macos.get_input_lock_path().exists()
 
