@@ -293,14 +293,16 @@ class BrowserDOMAdapter(InteractionAdapter):
                     evidence={"url": page.url},
                 )
 
-            elif cond == "visible":
+            elif cond in ("visible", "element_present"):
                 locator = await self.resolve_locator(page, target)
-                is_vis = await locator.is_visible()
+                count = await locator.count()
+                is_vis = (await locator.is_visible()) if count > 0 else False
+                is_present = count > 0 if cond == "element_present" else is_vis
                 return VerificationResult(
-                    verified=is_vis,
+                    verified=is_present,
                     mode=self.mode,
-                    reason=f"Element '{target}' is {'visible' if is_vis else 'not visible'}",
-                    evidence={"visible": is_vis},
+                    reason=f"Element '{target}' is {'present/visible' if is_present else 'not present/visible'}",
+                    evidence={"count": count, "visible": is_vis},
                 )
 
             elif cond == "hidden":
@@ -322,6 +324,20 @@ class BrowserDOMAdapter(InteractionAdapter):
                     mode=self.mode,
                     reason=f"Element text {'contains' if contains else 'does not contain'} expected value",
                     evidence={"text": text[:200]},
+                )
+
+            elif cond == "value_equals":
+                locator = await self.resolve_locator(page, target)
+                try:
+                    val = await locator.input_value()
+                except Exception:
+                    val = await locator.inner_text()
+                equals = str(val) == str(expected)
+                return VerificationResult(
+                    verified=equals,
+                    mode=self.mode,
+                    reason=f"Element value {'equals' if equals else 'does not equal'} expected value",
+                    evidence={"value": val},
                 )
 
             return VerificationResult(

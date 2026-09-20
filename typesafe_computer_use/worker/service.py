@@ -15,7 +15,7 @@ from typesafe_sdk import TypeSafeClient
 
 from .. import config, macos
 from ..actions import Context, is_noop, perform
-from ..adapters import InteractionMode, InteractionRequest, InteractionResult, VerificationExpectation
+from ..adapters import InteractionMode, InteractionRequest, InteractionResult, SideEffectState, VerificationExpectation
 from ..config import DEFAULT_DELAY, DEFAULT_MIN_CONFIDENCE, DEFAULT_STEPS, MAX_OPTIONS
 from ..decide import Decision, decide
 from ..models import Abort
@@ -160,6 +160,26 @@ class WorkerService:
             )
             return future.result(timeout=15.0)
         return loop.run_until_complete(self.router.route_and_execute(request, expectation))
+
+    def _verify_sync(self, expectation: VerificationExpectation) -> Any | None:
+        """Synchronous wrapper for verifying DOM state from worker threads."""
+        if not hasattr(self.router, "dom_adapter") or not hasattr(self.router.dom_adapter, "verify"):
+            return None
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+
+            if loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(
+                    self.router.dom_adapter.verify(expectation),
+                    loop,
+                )
+                return future.result(timeout=5.0)
+            return loop.run_until_complete(self.router.dom_adapter.verify(expectation))
+        except Exception:
+            return None
 
     def next_event_id(self, task_id: str) -> str:
         self._event_counter += 1
@@ -796,6 +816,51 @@ class WorkerService:
                         },
                     )
 
+                    # Safety Invariant: Check for ambiguous side effects (SideEffectState.UNKNOWN)
+                    if res.side_effect_state == SideEffectState.UNKNOWN:
+                        log(f"Step {step}: Action side_effect_state is UNKNOWN. Automatic retry and fallback forbidden.")
+                        action_name = str(decision.kind.choice).lower()
+                        target_name = str(target_text or "").lower()
+                        is_critical = any(
+                            kw in (action_name + " " + target_name)
+                            for kw in ("payment", "send", "publish", "delete", "transfer", "checkout")
+                        )
+                        verified = False
+                        if not is_critical:
+                            v_res = self._verify_sync(
+                                VerificationExpectation(
+                                    condition="element_present",
+                                    target=target_text or "",
+                                )
+                            )
+                            verified = v_res.verified if v_res else False
+
+                        if not verified:
+                            outcome = "Action side-effect state unknown. Awaiting manual review."
+                            log(f"Step {step}: Side effect is UNKNOWN and unverified. Escalating to AWAITING_REVIEW.")
+                            self.db.update_task(
+                                task_id,
+                                state=TaskState.AWAITING_REVIEW,
+                                outcome=outcome,
+                                error="Ambiguous mutation state: operation was cancelled or timed out during dispatch",
+                            )
+                            self.emit_event_sync(
+                                task_id=task_id,
+                                run_id=run_id,
+                                step=step,
+                                phase=EventPhase.STATE_CHANGED,
+                                state=TaskState.AWAITING_REVIEW,
+                                action=decision.kind.choice,
+                                target=target_text,
+                                confidence=decision.confidence,
+                                result="Awaiting review: ambiguous side effect state",
+                                extra={
+                                    "side_effect_state": "unknown",
+                                    "reason": "Mutation dispatch unconfirmed; automatic retry and fallback forbidden to prevent duplicate side effects.",
+                                },
+                            )
+                            break
+
                     # Stall detection
                     repeated = bool(history) and len(history) > 1 and history[-2] == what and screen.url == last_url
                     last_url = screen.url
@@ -829,6 +894,8 @@ class WorkerService:
                 final_state = TaskState.STOPPED
             elif outcome == "failed":
                 final_state = TaskState.FAILED
+            elif outcome == "awaiting_review" or "awaiting manual review" in outcome.lower():
+                final_state = TaskState.AWAITING_REVIEW
 
             self.db.update_task(task_id, state=final_state, outcome=outcome, error=error_msg)
             self.emit_event_sync(

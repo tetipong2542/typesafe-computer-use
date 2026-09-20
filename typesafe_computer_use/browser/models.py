@@ -18,7 +18,7 @@ def get_default_profile_dir() -> Path:
 class BrowserSessionConfig:
     """Configuration for Chrome CDP session management."""
     cdp_host: str = "127.0.0.1"
-    cdp_port: int = 9222
+    cdp_port: int = 0  # Default to dynamic ephemeral port allocated by OS via --remote-debugging-port=0
     user_data_dir: Path = field(default_factory=get_default_profile_dir)
     headless: bool = False
     connect_timeout_seconds: float = 15.0
@@ -27,16 +27,35 @@ class BrowserSessionConfig:
 
     def __post_init__(self) -> None:
         """Validate security constraints on initialization."""
-        # Enforce strict loopback binding to prevent remote network exposure
+        # 1. Enforce strict loopback binding to prevent remote network exposure
         allowed_hosts = {"127.0.0.1", "localhost", "::1"}
         if self.cdp_host.strip().lower() not in allowed_hosts:
             raise BrowserSecurityError(
                 f"CDP host must bind to loopback address ({allowed_hosts}), got: {self.cdp_host}"
             )
+
+        if self.cdp_port < 0:
+            raise BrowserSecurityError(f"CDP port must be >= 0, got: {self.cdp_port}")
+
         if isinstance(self.user_data_dir, str):
             self.user_data_dir = Path(self.user_data_dir).expanduser()
         elif isinstance(self.user_data_dir, Path):
             self.user_data_dir = self.user_data_dir.expanduser()
+
+        # 2. Enforce non-default user-data directory (Chrome Remote Debugging Policy & data protection)
+        personal_dirs = [
+            Path.home() / "Library" / "Application Support" / "Google" / "Chrome",
+            Path.home() / ".config" / "google-chrome",
+            Path.home() / ".config" / "chromium",
+        ]
+        resolved = self.user_data_dir.resolve()
+        for p in personal_dirs:
+            if resolved == p.resolve():
+                raise BrowserSecurityError(
+                    f"Refusing to use personal Chrome profile directory ({resolved}) for remote debugging. "
+                    "Chrome requires a dedicated non-default user-data directory for remote debugging "
+                    "(https://developer.chrome.com/blog/remote-debugging-port) to protect personal browser data."
+                )
 
 
 @dataclass

@@ -27,9 +27,11 @@ class RouterMode(enum.StrEnum):
 class SideEffectState(enum.StrEnum):
     """Mutation / side-effect status tracking to guarantee idempotency and prevent duplicate writes."""
     NOT_STARTED = "not_started"              # Operation aborted or failed before starting any mutation
+    DISPATCHING = "dispatching"              # Operation is being prepared and resolved prior to CDP dispatch
+    DISPATCHED = "dispatched"                # Action has been transmitted to browser/OS via CDP, awaiting confirmation
     CONFIRMED_SUCCESS = "confirmed_success"  # Mutation completed and independently verified
     CONFIRMED_FAILURE = "confirmed_failure"  # Failed cleanly without persistent state mutation
-    UNKNOWN = "unknown"                      # Timeout or connection drop during write; ambiguous state
+    UNKNOWN = "unknown"                      # Timeout, cancellation, or connection drop during/after dispatch; ambiguous state
 
 
 class RiskLevel(enum.StrEnum):
@@ -106,10 +108,10 @@ class InteractionResult:
 @dataclass
 class VerificationExpectation:
     """Expectation for verifying post-action state independently."""
-    mode: InteractionMode
     condition: str
     target: str
     expected_value: Any = None
+    mode: InteractionMode = InteractionMode.BROWSER_DOM
     timeout_seconds: float = 5.0
 
 
@@ -120,3 +122,8 @@ class VerificationResult:
     mode: InteractionMode
     reason: str
     evidence: Any = None
+
+    @property
+    def passed(self) -> bool:
+        """Alias for verified for backward and caller compatibility."""
+        return self.verified
