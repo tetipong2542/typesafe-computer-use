@@ -68,3 +68,34 @@ def test_ax_calls_blocked_when_locked():
 
         mock_action.assert_not_called()
         mock_attr.assert_not_called()
+
+
+def test_boot_input_lock_recovery(tmp_path):
+    """If Guest reboots after an emergency stop or during takeover, lock must be restored on boot."""
+    from typesafe_computer_use.worker.db import WorkerDatabase
+    from typesafe_computer_use.worker.state import TaskState
+
+    db = WorkerDatabase(tmp_path / "boot_recovery.db")
+
+    # Ensure clean slate
+    macos.set_input_lock(False)
+    assert not macos.is_input_locked()
+
+    # Case 1: No previous emergency stop -> no lock restored
+    assert db.check_and_restore_input_lock() is False
+    assert not macos.is_input_locked()
+
+    # Case 2: An emergency stopped task existed before reboot
+    db.create_task("task_em_01", goal="Goal", config={})
+    db.update_task("task_em_01", state=TaskState.STOPPED, outcome="Emergency stop executed (exitcode: -9)")
+
+    # Simulate reboot: input lock file was wiped by OS
+    macos.set_input_lock(False)
+    assert not macos.is_input_locked()
+
+    # Worker boots up:
+    restored = db.check_and_restore_input_lock()
+    assert restored is True
+    assert macos.is_input_locked()
+    assert Path("/tmp/typesafe_input_locked").exists()
+

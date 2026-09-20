@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import subprocess
 import threading
 import time
 import uuid
@@ -53,6 +54,8 @@ class TaskController:
         self.current_step: int = 0
         self.active_approval_id: str | None = None
         self.emergency_stopped: bool = False
+        self.process: subprocess.Popen | None = None
+        self.exit_code: int | None = None
 
     def request_pause(self) -> None:
         self._pause_event.clear()
@@ -64,12 +67,28 @@ class TaskController:
         self._stop_event.set()
         self._pause_event.set()
 
-    def request_emergency_stop(self) -> None:
+    def request_emergency_stop(self) -> int | None:
+        """Emergency stop: locks input immediately, sends SIGTERM, waits, sends SIGKILL if needed."""
         self.emergency_stopped = True
+        # 1. Engage hardware/file input lock FIRST
+        macos.set_input_lock(True)
         self._emergency_stop_event.set()
         self._stop_event.set()
         self._pause_event.set()
-        macos.set_input_lock(True)
+
+        exit_code = None
+        if self.process is not None and self.process.poll() is None:
+            try:
+                self.process.terminate()
+                try:
+                    exit_code = self.process.wait(timeout=1.5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    exit_code = self.process.wait(timeout=1.0)
+            except Exception:
+                pass
+            self.exit_code = exit_code
+        return exit_code
 
     def request_reset(self) -> None:
         self.emergency_stopped = False
@@ -164,10 +183,9 @@ class WorkerService:
     def emit_event_sync(self, *args, **kwargs) -> TaskEvent:
         """Synchronous wrapper for emitting events from worker threads."""
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
 
         if loop.is_running():
             future = asyncio.run_coroutine_threadsafe(self.emit_event(*args, **kwargs), loop)
@@ -345,18 +363,35 @@ class WorkerService:
         if not task or not controller:
             return False
 
-        controller.request_emergency_stop()
-        self.db.update_task(task_id, state=TaskState.STOPPED, outcome="Emergency stop executed", error="Emergency stop requested by user")
+        # Input lock is engaged FIRST inside request_emergency_stop
+        exit_code = controller.request_emergency_stop()
+        exit_str = f" (exitcode: {exit_code})" if exit_code is not None else ""
+        outcome_msg = f"Emergency stop executed{exit_str}"
+
+        self.db.update_task(task_id, state=TaskState.STOPPED, outcome=outcome_msg, error="Emergency stop requested by user")
         self.emit_event_sync(
             task_id=task_id,
             run_id=task.run_id or "",
             step=task.current_step,
             phase=EventPhase.STATE_CHANGED,
             state=TaskState.STOPPED,
-            result="Emergency stop: input locked and task stopped immediately",
+            result=f"Emergency stop: input locked and runner terminated immediately{exit_str}",
             error="Emergency stop executed",
         )
         return True
+
+    def create_sse_ticket(self, task_id: str) -> dict[str, Any] | None:
+        """Create a short-lived single-use SSE ticket for streaming."""
+        task = self.db.get_task(task_id)
+        if not task:
+            return None
+        import secrets
+        ticket_id = f"ticket_{secrets.token_urlsafe(24)}"
+        return self.db.create_sse_ticket(ticket_id=ticket_id, task_id=task_id, ttl_seconds=60.0)
+
+    def validate_and_consume_sse_ticket(self, ticket_id: str, task_id: str) -> bool:
+        """Verify and consume an SSE streaming ticket."""
+        return self.db.validate_and_consume_sse_ticket(ticket_id=ticket_id, task_id=task_id)
 
     def takeover_task(self, task_id: str) -> tuple[bool, str]:
         """Exclusive takeover: pause runner, verify no action in progress, lock synthetic input."""

@@ -58,7 +58,13 @@ service = WorkerService(db=db, event_hub=event_hub, policy_engine=policy_engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Recover any interrupted tasks from previous worker crashes or restarts."""
+    """Lifecycle startup: restore input lock if needed and recover interrupted tasks."""
+    # 1. Check if input lock needs to be restored from prior emergency stop or takeover
+    locked = db.check_and_restore_input_lock()
+    if locked:
+        print("[Worker Startup] Restored synthetic input lock from previous emergency stop / takeover session.")
+
+    # 2. Recover any interrupted active tasks
     interrupted = db.recover_interrupted_tasks()
     if interrupted:
         print(f"[Worker Startup] Recovered {len(interrupted)} interrupted task(s): {', '.join(interrupted)}")
@@ -84,9 +90,8 @@ app.add_middleware(
 def verify_auth_token(
     authorization: str | None = Header(default=None),
     x_worker_token: str | None = Header(default=None, alias="X-Worker-Token"),
-    token_query: str | None = Query(default=None, alias="token"),
 ) -> None:
-    """Verify authorization header or query param against configured WORKER_AUTH_TOKEN."""
+    """Verify authorization header against configured WORKER_AUTH_TOKEN."""
     current_token = os.environ.get("WORKER_AUTH_TOKEN", WORKER_AUTH_TOKEN)
     if not current_token:
         return
@@ -96,8 +101,6 @@ def verify_auth_token(
         token = authorization[7:].strip()
     elif x_worker_token:
         token = x_worker_token.strip()
-    elif token_query:
-        token = token_query.strip()
 
     if not token or token != current_token:
         raise HTTPException(
@@ -124,14 +127,16 @@ class CreateApprovalRequest(BaseModel):
     action_fingerprint: str = Field(..., description="Fingerprint of action to execute")
 
 
-# ------------------------------------------------------------------ Endpoints
+# ------------------------------------------------------------------ Endpoints (14 Total)
 
 
+# 1. Health Probe
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok", "service": "typesafe-computer-worker"}
 
 
+# 2. Submit Task
 @app.post("/tasks", dependencies=[Depends(verify_auth_token)])
 def create_task(req: CreateTaskRequest) -> dict[str, Any]:
     """Submit and start a new background task."""
@@ -148,6 +153,7 @@ def create_task(req: CreateTaskRequest) -> dict[str, Any]:
     return {"task_id": task.task_id, "run_id": task.run_id, "state": task.state.value, "goal": task.goal}
 
 
+# 3. Get Task Status
 @app.get("/tasks/{task_id}", dependencies=[Depends(verify_auth_token)])
 def get_task(task_id: str) -> dict[str, Any]:
     """Get current status and metadata of a task."""
@@ -157,6 +163,7 @@ def get_task(task_id: str) -> dict[str, Any]:
     return task.to_dict()
 
 
+# 4. Pause Task
 @app.post("/tasks/{task_id}/pause", dependencies=[Depends(verify_auth_token)])
 def pause_task(task_id: str) -> dict[str, Any]:
     """Request a task to pause at the next safe boundary."""
@@ -166,6 +173,47 @@ def pause_task(task_id: str) -> dict[str, Any]:
     return {"status": "pause_requested", "task_id": task_id}
 
 
+# 5. Resume Task
+@app.post("/tasks/{task_id}/resume", dependencies=[Depends(verify_auth_token)])
+def resume_task(task_id: str) -> dict[str, Any]:
+    """Resume a paused task (if in awaiting_review, strictly requires prior explicit approval)."""
+    ok, msg = service.resume_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"status": "resumed", "task_id": task_id, "message": msg}
+
+
+# 6. Stop Task (Graceful)
+@app.post("/tasks/{task_id}/stop", dependencies=[Depends(verify_auth_token)])
+def stop_task(task_id: str) -> dict[str, Any]:
+    """Request graceful cancellation of a task."""
+    ok = service.stop_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Unable to stop task")
+    return {"status": "stopping", "task_id": task_id}
+
+
+# 7. Emergency Stop (Hard input lock + terminate)
+@app.post("/tasks/{task_id}/emergency-stop", dependencies=[Depends(verify_auth_token)])
+def emergency_stop_task(task_id: str) -> dict[str, Any]:
+    """Emergency stop: locks synthetic input immediately and terminates runner."""
+    ok = service.emergency_stop_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Unable to emergency stop task")
+    return {"status": "emergency_stopped", "task_id": task_id, "input_locked": True}
+
+
+# 8. Reset Emergency Lock
+@app.post("/tasks/{task_id}/reset", dependencies=[Depends(verify_auth_token)])
+def reset_task(task_id: str) -> dict[str, Any]:
+    """Explicitly reset an emergency-stopped task and release synthetic input lock."""
+    ok, msg = service.reset_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"status": "reset", "task_id": task_id, "input_locked": False, "message": msg}
+
+
+# 9. Explicit Human Approval
 @app.post("/tasks/{task_id}/approvals/{event_id}", dependencies=[Depends(verify_auth_token)])
 def create_approval(task_id: str, event_id: str, req: CreateApprovalRequest) -> dict[str, Any]:
     """Grant explicit human approval for a gated action."""
@@ -188,42 +236,7 @@ def create_approval(task_id: str, event_id: str, req: CreateApprovalRequest) -> 
     }
 
 
-@app.post("/tasks/{task_id}/resume", dependencies=[Depends(verify_auth_token)])
-def resume_task(task_id: str) -> dict[str, Any]:
-    """Resume a paused task (if in awaiting_review, requires prior approval via POST /tasks/{id}/approvals/{event_id})."""
-    ok, msg = service.resume_task(task_id)
-    if not ok:
-        raise HTTPException(status_code=400, detail=msg)
-    return {"status": "resumed", "task_id": task_id, "message": msg}
-
-
-@app.post("/tasks/{task_id}/stop", dependencies=[Depends(verify_auth_token)])
-def stop_task(task_id: str) -> dict[str, Any]:
-    """Request graceful cancellation of a task."""
-    ok = service.stop_task(task_id)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Unable to stop task")
-    return {"status": "stopping", "task_id": task_id}
-
-
-@app.post("/tasks/{task_id}/emergency-stop", dependencies=[Depends(verify_auth_token)])
-def emergency_stop_task(task_id: str) -> dict[str, Any]:
-    """Emergency stop: locks synthetic input immediately and terminates runner."""
-    ok = service.emergency_stop_task(task_id)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Unable to emergency stop task")
-    return {"status": "emergency_stopped", "task_id": task_id, "input_locked": True}
-
-
-@app.post("/tasks/{task_id}/reset", dependencies=[Depends(verify_auth_token)])
-def reset_task(task_id: str) -> dict[str, Any]:
-    """Explicitly reset an emergency-stopped task and release synthetic input lock."""
-    ok, msg = service.reset_task(task_id)
-    if not ok:
-        raise HTTPException(status_code=400, detail=msg)
-    return {"status": "reset", "task_id": task_id, "input_locked": False, "message": msg}
-
-
+# 10. Exclusive Takeover
 @app.post("/tasks/{task_id}/takeover", dependencies=[Depends(verify_auth_token)])
 def takeover_task(task_id: str) -> dict[str, Any]:
     """Acquire exclusive interactive control: pauses agent and locks synthetic inputs."""
@@ -244,6 +257,7 @@ def takeover_task(task_id: str) -> dict[str, Any]:
     }
 
 
+# 11. Release Takeover
 @app.post("/tasks/{task_id}/release-takeover", dependencies=[Depends(verify_auth_token)])
 def release_takeover_task(task_id: str) -> dict[str, Any]:
     """Release exclusive interactive control: unlocks inputs and resets perception cache."""
@@ -259,25 +273,66 @@ def release_takeover_task(task_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/tasks/{task_id}/events", dependencies=[Depends(verify_auth_token)])
+# 12. Generate Short-Lived Single-Use SSE Ticket
+@app.post("/tasks/{task_id}/events/token", dependencies=[Depends(verify_auth_token)])
+def create_events_token(task_id: str) -> dict[str, Any]:
+    """Issue a short-lived, task-scoped, single-use ticket for SSE streaming."""
+    ticket_data = service.create_sse_ticket(task_id)
+    if not ticket_data:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "status": "ticket_issued",
+        "task_id": task_id,
+        "ticket": ticket_data["ticket"],
+        "expires_in": ticket_data["expires_in"],
+        "stream_url": f"/tasks/{task_id}/events?ticket={ticket_data['ticket']}",
+    }
+
+
+# 13. Stream Realtime Events (SSE)
+@app.get("/tasks/{task_id}/events")
 async def get_task_events(
     task_id: str,
     request: Request,
+    ticket: str | None = Query(None, alias="ticket"),
     last_event_id: str | None = Query(None, alias="last_event_id"),
 ) -> EventSourceResponse:
-    """Stream realtime task events via Server-Sent Events (SSE). Supports Last-Event-ID reconnect."""
-    header_last_id = request.headers.get("Last-Event-ID")
-    effective_last_id = last_event_id or header_last_id
+    """Stream realtime task events via Server-Sent Events (SSE). Supports Last-Event-ID reconnect.
+    
+    Authentication requires either:
+    1. Standard Authorization: Bearer <main_token> header (e.g. from fetch() streams), OR
+    2. A short-lived, task-scoped, single-use ticket via ?ticket=<ticket> (e.g. from EventSource).
+    """
+    auth_header = request.headers.get("Authorization")
+    x_token = request.headers.get("X-Worker-Token")
+    current_main_token = os.environ.get("WORKER_AUTH_TOKEN", WORKER_AUTH_TOKEN)
+
+    authenticated = False
+    if auth_header and auth_header.startswith("Bearer "):
+        if auth_header[7:].strip() == current_main_token:
+            authenticated = True
+    elif (x_token and x_token.strip() == current_main_token) or (ticket and service.validate_and_consume_sse_ticket(ticket, task_id)):
+        authenticated = True
+
+    if not authenticated:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid, missing, or expired authentication (use Bearer header or valid ?ticket=)",
+        )
 
     task = service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    header_last_id = request.headers.get("Last-Event-ID")
+    effective_last_id = last_event_id or header_last_id
 
     return EventSourceResponse(
         event_hub.subscribe(task_id, last_event_id=effective_last_id)
     )
 
 
+# 14. Screenshot
 @app.get("/tasks/{task_id}/screenshot", dependencies=[Depends(verify_auth_token)])
 def get_task_screenshot(
     task_id: str,

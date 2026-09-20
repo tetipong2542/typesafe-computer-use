@@ -3,6 +3,7 @@
 import os
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 # Ensure a known auth token for integration testing
@@ -10,7 +11,7 @@ os.environ["WORKER_AUTH_TOKEN"] = "typesafe-worker-secret-token"
 
 from typesafe_computer_use.worker.db import WorkerDatabase
 from typesafe_computer_use.worker.events import EventHub
-from typesafe_computer_use.worker.policy import PolicyEngine
+from typesafe_computer_use.worker.policy import PolicyEngine, compute_action_fingerprint
 from typesafe_computer_use.worker.server import app
 from typesafe_computer_use.worker.service import WorkerService
 from typesafe_computer_use.worker.state import TaskState
@@ -33,35 +34,143 @@ def test_healthz():
     assert response.json()["status"] == "ok"
 
 
-def test_auth_rejection():
+# Parameterized test: all protected endpoints reject missing or invalid auth
+PROTECTED_ENDPOINTS = [
+    ("POST", "/tasks", {"goal": "test"}),
+    ("GET", "/tasks/task_test_id", None),
+    ("POST", "/tasks/task_test_id/pause", None),
+    ("POST", "/tasks/task_test_id/resume", None),
+    ("POST", "/tasks/task_test_id/stop", None),
+    ("POST", "/tasks/task_test_id/emergency-stop", None),
+    ("POST", "/tasks/task_test_id/reset", None),
+    ("POST", "/tasks/task_test_id/approvals/evt_1", {
+        "step": 1, "action": "click", "target": "ok",
+        "screenshot_hash": "h1", "action_fingerprint": "fp1"
+    }),
+    ("POST", "/tasks/task_test_id/takeover", None),
+    ("POST", "/tasks/task_test_id/release-takeover", None),
+    ("POST", "/tasks/task_test_id/events/token", None),
+    ("GET", "/tasks/task_test_id/screenshot", None),
+]
+
+
+@pytest.mark.parametrize("method,path,payload", PROTECTED_ENDPOINTS)
+def test_all_endpoints_auth_rejection(method, path, payload):
     client = TestClient(app)
-    # No auth header
-    response = client.post("/tasks", json={"goal": "test"})
-    assert response.status_code == 401
 
-    # Wrong auth header
-    response = client.post("/tasks", json={"goal": "test"}, headers={"Authorization": "Bearer wrong-token"})
-    assert response.status_code == 401
+    # 1. No auth header -> 401
+    kwargs = {"json": payload} if payload else {}
+    res = client.request(method, path, **kwargs)
+    assert res.status_code == 401, f"{method} {path} should reject without auth"
+
+    # 2. Wrong auth header -> 401
+    res_wrong = client.request(method, path, headers={"Authorization": "Bearer wrong-token"}, **kwargs)
+    assert res_wrong.status_code == 401, f"{method} {path} should reject invalid token"
 
 
-def test_sse_auth():
-    client = TestClient(app)
-    # SSE without token -> 401
-    res = client.get("/tasks/task_123/events")
-    assert res.status_code == 401
+# Parameterized test: task-scoped endpoints return 404 for nonexistent tasks
+TASK_SCOPED_ENDPOINTS = [
+    ("GET", "/tasks/task_nonexistent", None),
+    ("POST", "/tasks/task_nonexistent/pause", None),
+    ("POST", "/tasks/task_nonexistent/resume", None),
+    ("POST", "/tasks/task_nonexistent/stop", None),
+    ("POST", "/tasks/task_nonexistent/emergency-stop", None),
+    ("POST", "/tasks/task_nonexistent/approvals/evt_1", {
+        "step": 1, "action": "click", "target": "ok",
+        "screenshot_hash": "h1", "action_fingerprint": "fp1"
+    }),
+    ("POST", "/tasks/task_nonexistent/takeover", None),
+    ("POST", "/tasks/task_nonexistent/release-takeover", None),
+    ("POST", "/tasks/task_nonexistent/events/token", None),
+    ("GET", "/tasks/task_nonexistent/screenshot", None),
+]
 
-    # SSE with query param token -> 404 (because task not found, but authenticated!)
-    res = client.get("/tasks/task_123/events?token=typesafe-worker-secret-token")
-    assert res.status_code == 404
 
-    # SSE with header -> 404 (authenticated)
-    res = client.get("/tasks/task_123/events", headers=AUTH_HEADERS)
-    assert res.status_code == 404
+@pytest.mark.parametrize("method,path,payload", TASK_SCOPED_ENDPOINTS)
+def test_all_endpoints_not_found(method, path, payload, tmp_path):
+    test_svc = setup_test_service(tmp_path)
+    with patch("typesafe_computer_use.worker.server.service", test_svc):
+        client = TestClient(app)
+        kwargs = {"json": payload} if payload else {}
+        res = client.request(method, path, headers=AUTH_HEADERS, **kwargs)
+        # Should be 400 or 404 depending on whether it's an action or lookup
+        assert res.status_code in (400, 404), f"{method} {path} should fail on nonexistent task"
+
+
+def test_invalid_state_transitions(tmp_path):
+    test_svc = setup_test_service(tmp_path)
+    with patch("typesafe_computer_use.worker.server.service", test_svc):
+        client = TestClient(app)
+
+        # Create task in QUEUED state
+        test_svc.db.create_task("task_trans_01", goal="Goal", config={})
+        controller = test_svc._controllers.get("task_trans_01")
+        if not controller:
+            from typesafe_computer_use.worker.service import TaskController
+            test_svc._controllers["task_trans_01"] = TaskController("task_trans_01", "run_1")
+
+        # Calling resume when queued -> 400
+        res = client.post("/tasks/task_trans_01/resume", headers=AUTH_HEADERS)
+        assert res.status_code == 400
+
+        # Calling release-takeover when not in takeover -> 400
+        res = client.post("/tasks/task_trans_01/release-takeover", headers=AUTH_HEADERS)
+        assert res.status_code == 400
+
+        # Mark task STOPPED
+        test_svc.db.update_task("task_trans_01", state=TaskState.STOPPED)
+
+        # Calling pause on STOPPED task -> 400
+        res = client.post("/tasks/task_trans_01/pause", headers=AUTH_HEADERS)
+        assert res.status_code == 400
+
+
+def test_sse_ticket_lifecycle(tmp_path):
+    test_svc = setup_test_service(tmp_path)
+    with patch("typesafe_computer_use.worker.server.service", test_svc):
+        client = TestClient(app)
+
+        test_svc.db.create_task("task_sse_01", goal="Goal", config={})
+
+        # 1. Main token in ?token= is NOT allowed
+        res = client.get("/tasks/task_sse_01/events?token=typesafe-worker-secret-token")
+        assert res.status_code == 401
+
+        async def mock_sub(task_id, last_event_id=None):
+            yield {"event": "state_changed", "data": "{}"}
+
+        with patch("typesafe_computer_use.worker.server.event_hub.subscribe", mock_sub):
+            # 2. Main token in Authorization header IS allowed
+            res = client.get("/tasks/task_sse_01/events", headers=AUTH_HEADERS)
+            assert res.status_code == 200
+            assert "text/event-stream" in res.headers["content-type"]
+
+            # 3. Issue a short-lived ticket via POST /tasks/{id}/events/token
+            token_res = client.post("/tasks/task_sse_01/events/token", headers=AUTH_HEADERS)
+            assert token_res.status_code == 200
+            ticket_data = token_res.json()
+            assert ticket_data["status"] == "ticket_issued"
+            ticket = ticket_data["ticket"]
+            assert ticket.startswith("ticket_")
+
+            # 4. Connect with ticket via query string
+            res = client.get(f"/tasks/task_sse_01/events?ticket={ticket}")
+            assert res.status_code == 200
+
+            # 5. Ticket is single-use; connecting a second time must return 401
+            res_repeat = client.get(f"/tasks/task_sse_01/events?ticket={ticket}")
+            assert res_repeat.status_code == 401
+
+            # 6. Ticket for wrong task must return 401
+            test_svc.db.create_task("task_sse_other", goal="Other", config={})
+            t2_res = client.post("/tasks/task_sse_01/events/token", headers=AUTH_HEADERS)
+            t2_ticket = t2_res.json()["ticket"]
+            res_wrong_task = client.get(f"/tasks/task_sse_other/events?ticket={t2_ticket}")
+            assert res_wrong_task.status_code == 401
 
 
 def test_create_and_manage_task(tmp_path):
     test_svc = setup_test_service(tmp_path)
-    # Patch the global service in server
     with (
         patch("typesafe_computer_use.worker.server.service", test_svc),
         patch.object(test_svc, "_run_task_thread", return_value=None),
@@ -103,7 +212,7 @@ def test_create_and_manage_task(tmp_path):
         assert takeover_data["status"] == "takeover"
         assert takeover_data["input_locked"] is True
         assert "vnc://admin@" in takeover_data["vnc_uri"]
-        assert "admin:admin" not in takeover_data["vnc_uri"]  # No embedded password!
+        assert "admin:admin" not in takeover_data["vnc_uri"]
 
         # 6. Release Takeover
         res = client.post(f"/tasks/{task_id}/release-takeover", headers=AUTH_HEADERS)
@@ -111,8 +220,6 @@ def test_create_and_manage_task(tmp_path):
         assert res.json()["status"] == "takeover_released"
 
         # 7. Approvals flow: when in awaiting_review
-        from typesafe_computer_use.worker.policy import compute_action_fingerprint
-
         fp = compute_action_fingerprint("click", "Delete Account", 2)
         test_svc.db.update_task(task_id, state=TaskState.AWAITING_REVIEW)
         controller = test_svc._controllers[task_id]

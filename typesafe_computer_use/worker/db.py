@@ -83,8 +83,19 @@ class WorkerDatabase:
                     FOREIGN KEY (task_id) REFERENCES tasks(task_id)
                 );
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sse_tickets (
+                    ticket_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    expires_at REAL NOT NULL,
+                    consumed_at REAL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+                );
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id, event_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sse_tickets_task ON sse_tickets(task_id, ticket_id);")
             conn.commit()
 
     def recover_interrupted_tasks(self) -> list[str]:
@@ -341,3 +352,59 @@ class WorkerDatabase:
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def check_and_restore_input_lock(self) -> bool:
+        """Check if any task was emergency_stopped (un-reset) or in takeover before reboot.
+        
+        If so, re-engage the hardware/file input lock before accepting any new tasks.
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT task_id, state, outcome FROM tasks 
+                WHERE state = 'takeover' 
+                   OR (state = 'stopped' AND outcome LIKE '%Emergency stop%')
+                ORDER BY updated_at DESC LIMIT 1
+                """
+            ).fetchone()
+            if row:
+                from .. import macos
+                macos.set_input_lock(True)
+                return True
+        return False
+
+    def create_sse_ticket(self, ticket_id: str, task_id: str, ttl_seconds: float = 60.0) -> dict[str, Any]:
+        """Generate a short-lived single-use ticket for SSE streaming."""
+        now = time.time()
+        expires_at = now + ttl_seconds
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO sse_tickets (ticket_id, task_id, expires_at, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (ticket_id, task_id, expires_at, now),
+            )
+            conn.commit()
+        return {
+            "ticket": ticket_id,
+            "task_id": task_id,
+            "expires_at": expires_at,
+            "expires_in": int(ttl_seconds),
+        }
+
+    def validate_and_consume_sse_ticket(self, ticket_id: str, task_id: str) -> bool:
+        """Validate that an SSE ticket is valid for this task and mark it consumed."""
+        now = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE sse_tickets 
+                SET consumed_at = ? 
+                WHERE ticket_id = ? AND task_id = ? AND consumed_at IS NULL AND expires_at > ?
+                """,
+                (now, ticket_id, task_id, now),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
