@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from .db import DEFAULT_DB_PATH, WorkerDatabase
 from .events import EventHub
+from .gate import ExecutionGate
 from .policy import DEFAULT_NORMAL_CONFIDENCE_THRESHOLD, PolicyEngine
 from .service import WorkerService
 
@@ -59,8 +60,9 @@ service = WorkerService(db=db, event_hub=event_hub, policy_engine=policy_engine)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle startup: restore input lock if needed and recover interrupted tasks."""
-    # 1. Check if input lock needs to be restored from prior emergency stop or takeover
-    locked = db.check_and_restore_input_lock()
+    # 1. Check if input lock needs to be restored via ExecutionGate
+    gate = ExecutionGate.get_instance()
+    locked = gate.rehydrate_on_boot(db)
     if locked:
         print("[Worker Startup] Restored synthetic input lock from previous emergency stop / takeover session.")
 

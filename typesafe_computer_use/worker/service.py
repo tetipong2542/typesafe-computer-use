@@ -23,6 +23,7 @@ from ..report import Log, annotate, ax_count, render_payload
 from ..writer import make_writer
 from .db import WorkerDatabase
 from .events import EventHub
+from .gate import ExecutionGate
 from .policy import (
     PolicyDecision,
     PolicyEngine,
@@ -368,6 +369,21 @@ class WorkerService:
         exit_str = f" (exitcode: {exit_code})" if exit_code is not None else ""
         outcome_msg = f"Emergency stop executed{exit_str}"
 
+        # Cancel any in-flight adapter operations via ExecutionGate
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+        if loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                ExecutionGate.get_instance().cancel_all_in_flight(reason="Emergency Stop"),
+                loop,
+            )
+        else:
+            loop.run_until_complete(
+                ExecutionGate.get_instance().cancel_all_in_flight(reason="Emergency Stop")
+            )
+
         self.db.update_task(task_id, state=TaskState.STOPPED, outcome=outcome_msg, error="Emergency stop requested by user")
         self.emit_event_sync(
             task_id=task_id,
@@ -412,6 +428,22 @@ class WorkerService:
 
         # 2. Lock input
         macos.set_input_lock(True)
+
+        # Cancel any in-flight adapter operations via ExecutionGate
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+        if loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                ExecutionGate.get_instance().cancel_all_in_flight(reason="Human Takeover"),
+                loop,
+            )
+        else:
+            loop.run_until_complete(
+                ExecutionGate.get_instance().cancel_all_in_flight(reason="Human Takeover")
+            )
+
         self.db.update_task(task_id, state=TaskState.TAKEOVER)
         self.emit_event_sync(
             task_id=task_id,

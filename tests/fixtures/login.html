@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TypeSafe Worker - Test Login</title>
+</head>
+<body>
+    <h1>Account Login</h1>
+    <form id="login-form">
+        <div>
+            <label for="username">Username or Email</label>
+            <input type="text" id="username" name="username" placeholder="user@example.com" data-testid="input-username">
+        </div>
+        <div>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="Enter password" data-testid="input-password">
+        </div>
+        <div>
+            <label for="credit-card">Credit Card Number</label>
+            <input type="text" id="credit-card" name="card_number" placeholder="4532-xxxx-xxxx-xxxx" data-testid="input-card">
+        </div>
+        <div>
+            <button type="button" id="submit-btn" aria-label="Sign In to Account" data-testid="btn-login">Sign In</button>
+        </div>
+    </form>
+    <div id="login-status" style="display:none;">Login Successful</div>
+
+    <script>
+        document.getElementById('submit-btn').addEventListener('click', function() {
+            document.getElementById('login-status').style.display = 'block';
+        });
+    </script>
+</body>
+</html>

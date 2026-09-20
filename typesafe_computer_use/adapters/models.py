@@ -17,6 +17,13 @@ class InteractionMode(enum.StrEnum):
     RAW_COORDINATE = "raw_coordinate"  # Direct coordinate input fallback
 
 
+class RouterMode(enum.StrEnum):
+    """Rollout modes for the Interaction Router."""
+    LEGACY = "legacy"                  # 100% visual-only, zero CDP overhead
+    SHADOW = "shadow"                  # Probes DOM, executes visual, logs comparison telemetry
+    HYBRID = "hybrid"                  # Full structured execution with fallback
+
+
 class SideEffectState(enum.StrEnum):
     """Mutation / side-effect status tracking to guarantee idempotency and prevent duplicate writes."""
     NOT_STARTED = "not_started"              # Operation aborted or failed before starting any mutation

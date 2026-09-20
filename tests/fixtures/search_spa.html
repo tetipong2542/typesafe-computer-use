@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TypeSafe Worker - Search SPA</title>
+</head>
+<body>
+    <h1>Product Catalog</h1>
+    <div>
+        <input type="text" id="search-box" placeholder="Search products..." data-testid="search-input">
+        <button id="search-btn" data-testid="search-btn">Search</button>
+    </div>
+    <ul id="results-list">
+        <li>Default Product 1</li>
+    </ul>
+
+    <button id="nav-btn" data-testid="spa-nav-btn">Go to Category</button>
+
+    <script>
+        document.getElementById('search-btn').addEventListener('click', function() {
+            const query = document.getElementById('search-box').value;
+            const list = document.getElementById('results-list');
+            list.innerHTML = `<li>Result for: ${query}</li>`;
+        });
+
+        document.getElementById('nav-btn').addEventListener('click', function() {
+            window.history.pushState({ page: 'category' }, 'Category View', '/category-books');
+            document.title = 'Category View - Books';
+            const event = new Event('pushstate');
+            window.dispatchEvent(event);
+        });
+    </script>
+</body>
+</html>
