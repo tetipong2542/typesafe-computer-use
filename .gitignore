@@ -9,3 +9,13 @@ dist/
 *.db
 *.db-shm
 *.db-wal
+
+# Dependencies and Benchmarks
+node_modules/
+benchmarks/**/node_modules/
+benchmarks/**/.venv*
+benchmarks/**/results/dry-*/
+benchmarks/**/results/*smoke*/
+benchmarks/**/results/**/raw/
+benchmarks/**/transcripts/
+*.log

@@ -1,0 +1,23 @@
+{
+  "format": "gzip-compressed JSON Lines; one record per run_id",
+  "privacy": "Credentials, session tokens, private IPs and local filesystem paths redacted, including embedded JSON. Requests, responses, actions, model usage and timing retained. These are sanitized copies, not byte-identical raw checkpoints.",
+  "redacted_string_fields": 4941,
+  "files": [
+    {
+      "file": "webmcp-traces.jsonl.gz",
+      "arm": "wm-jev-mercury-v3",
+      "attempts": 147,
+      "events": 3782,
+      "sha256": "a1896b6a6d9f086441e65c867fc3ed514ae4f4d824d890eb01ccb736bbc25544",
+      "bytes": 608906
+    },
+    {
+      "file": "dom-traces.jsonl.gz",
+      "arm": "a11y-jev-mercury-ultrafast",
+      "attempts": 147,
+      "events": 10262,
+      "sha256": "65b168dc786e8d5037500a6f88bc158e28f9252a077d422832c5001ceb290677",
+      "bytes": 6082711
+    }
+  ]
+}

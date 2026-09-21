@@ -1,0 +1,216 @@
+{
+  "description": "Frozen measured agent sources with portable imports. The optional DeepSeek hostname check is hardened; Mercury request behavior is unchanged. The public run.mjs is a new launcher; benchmark results are unchanged.",
+  "cohort_configuration_sha256": [
+    "8cde0637d5e1c4edb27d0d83497d2e38571bda0c2e0bbd568751f75178fa54bd",
+    "35271c3b2ed88df7216f7d9074ed18d75ed420862382bf25169da455afb9e5bb"
+  ],
+  "ultrafast_upstream_commit": "452c1ad2dd628008f1d5608f28158d76e49e6cc0",
+  "files": [
+    {
+      "file": "experiments/jev/frozen/arms/decision-agent.mjs",
+      "source_sha256": "16440911a1217a609395ad11f9e2a4bd5fe01e78cf53ada6e8515f27f943287b",
+      "published_sha256": "1a94e5210acdcdf661ee8fd51a3fa7056caa0be1809ca532df4122c6ee77a0ff",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/frozen/arms/decision-page.mjs",
+      "source_sha256": "473bba9abff39d58104695f2e7d29c8a14ed17e8605f6eccffe022d0756396db",
+      "published_sha256": "473bba9abff39d58104695f2e7d29c8a14ed17e8605f6eccffe022d0756396db",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/frozen/arms/decision-providers.mjs",
+      "source_sha256": "26c4abb11e11b25e0ebd26401b1494e3b602ff2378a930aef76624a847cf32ce",
+      "published_sha256": "26c4abb11e11b25e0ebd26401b1494e3b602ff2378a930aef76624a847cf32ce",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/frozen/arms/decision-spans.mjs",
+      "source_sha256": "310688de729dee1f769052d52b1c8bad8d3aa7117286df039294d69a2830d19f",
+      "published_sha256": "310688de729dee1f769052d52b1c8bad8d3aa7117286df039294d69a2830d19f",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/frozen/arms/wm-gpt.mjs",
+      "source_sha256": "b6f81b7f7b55e1e537c846d085a4a16994f4bbb6736e7aa457da0e7ffc980120",
+      "published_sha256": "84e831716cd355d55f6644428fdeb2ce7c10675e55599ef353226eaf0f904d46",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/frozen/harness/lib.mjs",
+      "source_sha256": "c2c453e3b901effd0343fe1934c2af3d17f733abc520aab338df2dfd387430a2",
+      "published_sha256": "c2c453e3b901effd0343fe1934c2af3d17f733abc520aab338df2dfd387430a2",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/frozen/harness/run.mjs",
+      "source_sha256": "b3e1e62e532501f17120c54654b14c69db6e79319404bff4c792fc7b0696c82d",
+      "published_sha256": "c7e2b145682347ef773305848110474abbcb0784c18245e138d4ebe529d43b34",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/webmcp/mercury.mjs",
+      "source_sha256": "d84d81e1423d24254b7ef2097fba787cfa3f16d1eecb65ff529628ddf520c1cf",
+      "published_sha256": "53df612c383a51211b410ffae4064f7ae68519561893bad8e7b6ecc9d72e8e3b",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/webmcp/transport.mjs",
+      "source_sha256": "c41c1d16be976736af6fb507a179da665826bfe8643e96c9fda0fd10cbecec1e",
+      "published_sha256": "c41c1d16be976736af6fb507a179da665826bfe8643e96c9fda0fd10cbecec1e",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/webmcp/readiness.mjs",
+      "source_sha256": "9f79a1f79d2d6181caabfa9034a4f65b1eae61c68fbab381e1076d05709dba2a",
+      "published_sha256": "638989aeacb5f925e5de845ab2e19056941891efbe2ed566e9339bcab243b0d3",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/webmcp/readiness-check.mjs",
+      "source_sha256": "325ff0aa211eda1c60d4276eff58fa173e45db56121cdaca06386d6bd792a497",
+      "published_sha256": "a7c0839d2565225284ec1dfe31984a178698fb2017a0b3671572c520a6abecf4",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/webmcp/signal-seam-check.mjs",
+      "source_sha256": "57e502651e901515532f074e1feff6605741acfdf458a75117ed61ed5862bec3",
+      "published_sha256": "1007b2eb9cecbdfb040216d32543416c74890fc230c7a59ff22bb7608882d3e3",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/ultrafast/provider/mercury.mjs",
+      "source_sha256": "d84d81e1423d24254b7ef2097fba787cfa3f16d1eecb65ff529628ddf520c1cf",
+      "published_sha256": "0c876590c72db244aaba14d556f6d3b07b4ad4a4cdfcbb64e739d0424bd7f3bb",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/ultrafast/provider/transport.mjs",
+      "source_sha256": "c41c1d16be976736af6fb507a179da665826bfe8643e96c9fda0fd10cbecec1e",
+      "published_sha256": "c41c1d16be976736af6fb507a179da665826bfe8643e96c9fda0fd10cbecec1e",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/arm.mjs",
+      "source_sha256": "1aadc8633c5b0b4713821a4f2b28ac59a197ab07a928e88919f3cf83a094d5b3",
+      "published_sha256": "5fdddbc9babef9cd165ce465f06924c4b848fcbe1d5a42c305448e870e529bd6",
+      "changes": "module import paths only"
+    },
+    {
+      "file": "experiments/jev/ultrafast/bridge.py",
+      "source_sha256": "cbbb6caf55eae3e4aff8711c8867af6b08c0c13b522f0b36289f275fe9c104f5",
+      "published_sha256": "cbbb6caf55eae3e4aff8711c8867af6b08c0c13b522f0b36289f275fe9c104f5",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/policy-overrides.json",
+      "source_sha256": "cb88906e396105538768712fd8bd49922af051b1be5bac8a26c8d5392870d0b1",
+      "published_sha256": "cb88906e396105538768712fd8bd49922af051b1be5bac8a26c8d5392870d0b1",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/policy.txt",
+      "source_sha256": "843966a6756ccb72b48820f981e5ab1d24bfc339ac0a9867cf8658eb998fc245",
+      "published_sha256": "843966a6756ccb72b48820f981e5ab1d24bfc339ac0a9867cf8658eb998fc245",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/python-dependencies.txt",
+      "source_sha256": "eacf47af2700e2ccd7e648d1b233af5822f23386f7241560f05683e1bf433b15",
+      "published_sha256": "eacf47af2700e2ccd7e648d1b233af5822f23386f7241560f05683e1bf433b15",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/snapshot-windtunnel.js",
+      "source_sha256": "215b2ed43648a62f4636e0f4eff51bb3b56aba5be3f2f03340f304bd76ca8a23",
+      "published_sha256": "215b2ed43648a62f4636e0f4eff51bb3b56aba5be3f2f03340f304bd76ca8a23",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/__init__.py",
+      "source_sha256": "60f025b8d24465e2c0f7a3547d43b8020fd8843de7b6cb3f892ef63f5548cf63",
+      "published_sha256": "60f025b8d24465e2c0f7a3547d43b8020fd8843de7b6cb3f892ef63f5548cf63",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/agent.py",
+      "source_sha256": "aaf8b271cb0ee6643fe7beb525328ab80de8568c7ac044d02b9c6721161e7c8b",
+      "published_sha256": "aaf8b271cb0ee6643fe7beb525328ab80de8568c7ac044d02b9c6721161e7c8b",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/browser.py",
+      "source_sha256": "ee08dafa93d731bd292aa0263a578a29c8001cf22eef3c59fe44a159649155ee",
+      "published_sha256": "ee08dafa93d731bd292aa0263a578a29c8001cf22eef3c59fe44a159649155ee",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/model.py",
+      "source_sha256": "a85ada8458d23642c5c8a4095acf0565e6268f81dcda26f6308942b653e9c9f3",
+      "published_sha256": "651de84298b4db97251ce7e1fd3d8b451c75db3859ced937cf032adb2c6050d5",
+      "changes": "optional DeepSeek URL substring check replaced with exact parsed hostname; unused by measured Mercury configuration"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/questions.py",
+      "source_sha256": "66a7054b85040b949e1757311257ea0c5a843c635f9a40c99f6d15ad660fb422",
+      "published_sha256": "66a7054b85040b949e1757311257ea0c5a843c635f9a40c99f6d15ad660fb422",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/upstream/jev_ultrafast/snapshot.js",
+      "source_sha256": "e50473501c8fb8e70f3b21866d987393e3f2315c639d638bd477d170e81ed78d",
+      "published_sha256": "e50473501c8fb8e70f3b21866d987393e3f2315c639d638bd477d170e81ed78d",
+      "changes": "none"
+    },
+    {
+      "file": "experiments/jev/ultrafast/fixture-check.mjs",
+      "source_sha256": "3a955cd68837ddea8c69f6f4f21edcc9c12e9c5ab372b0ab835e5c3005bc8275",
+      "published_sha256": "dc29c79a16e01f8e09f0a719e33ffee6c9b8daa97c5c05facfe12633a1ec1b22",
+      "changes": "module resolution path only"
+    },
+    {
+      "file": "experiments/jev/run.mjs",
+      "source_sha256": null,
+      "published_sha256": "8e8df1173a54f6dba764a895df729435afb783d5071814deed82f0bf7a3c5cb3",
+      "changes": "new portable launcher or integration check; measured core sources above unchanged"
+    },
+    {
+      "file": "experiments/jev/webmcp/arm.mjs",
+      "source_sha256": null,
+      "published_sha256": "873d9d1f31ce118ba7fe50d340843ced9b729e81be29ab60c5a0b1e2645dab58",
+      "changes": "new portable launcher or integration check; measured core sources above unchanged"
+    },
+    {
+      "file": "experiments/jev/webmcp/fixture-check.mjs",
+      "source_sha256": null,
+      "published_sha256": "c13a40690c4061f8e3447166656e164b22110452252e35951ce51f116fa75772",
+      "changes": "new portable launcher or integration check; measured core sources above unchanged"
+    }
+  ],
+  "dependencies": [
+    {
+      "file": "arms/prompts.mjs",
+      "published_sha256": "916c58f163c20e63b26f94455d67621867cefa46daa82c4839e28a56ca01895b"
+    },
+    {
+      "file": "arms/wm-claude.mjs",
+      "published_sha256": "6d1bce61f5f22ddbf4bfeefa8b0898140e0caa8a945ec328d592ec7c1d78daa1"
+    },
+    {
+      "file": "harness/capsule.mjs",
+      "published_sha256": "fb08b4d0f1cafd4061ae49fad7907f4d597d5d95cb9ea40f31bce997b5713f6a"
+    },
+    {
+      "file": "harness/lib.mjs",
+      "published_sha256": "e3f66382af0b9d98a24c00a277398eec28d7508aed01f1ef1ba51e56f1a7e2f1"
+    },
+    {
+      "file": "harness/tasks.mjs",
+      "published_sha256": "2a7608035d5ce26ae7e069260867b8c464a2df7f27e2fe9a4c997189cd700d82"
+    },
+    {
+      "file": "scoring/predicates.mjs",
+      "published_sha256": "1e9be92f6261a6f074b53c282fdd881d3f4874a47e37e689d17182b4fac7daf6"
+    }
+  ]
+}

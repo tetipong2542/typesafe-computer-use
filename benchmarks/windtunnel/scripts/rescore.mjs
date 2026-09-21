@@ -1,0 +1,128 @@
+#!/usr/bin/env node
+// Re-scores stored answer rows against the CURRENT task predicates and emits a
+// SCORER-CORRECTION ARTIFACT — a new results directory — instead of rewriting
+// the run it read. Raw run directories are immutable provenance: the earlier
+// version of this script rewrote results/*/run.json and results.csv in place,
+// which destroyed the record of what each run originally measured.
+//
+// Input is one consolidated base artifact (produced by combined-explorer.mjs),
+// so every configuration/task cell appears exactly once and a correction can
+// never be ambiguous about which run it supersedes. Output is a complete cell
+// for every cell containing at least one changed attempt — never a partial
+// cell, so the consolidation's later-complete-cell-wins rule stays valid.
+//
+//   node scripts/rescore.mjs <baseDir> [--out <dirname>]
+//   node scripts/combined-explorer.mjs --out canonical <baseDir> <correctionDir> [reruns...]
+//
+// Probe predicates ran against live database state and cannot be re-scored
+// offline; only answer predicates are eligible.
+import fs from "node:fs";
+import path from "node:path";
+import { csv } from "../harness/lib.mjs";
+import { score } from "../scoring/predicates.mjs";
+import { loadTasksBySite } from "../harness/build_explorer.mjs";
+
+const RES = path.resolve(import.meta.dirname, "../results");
+const argv = process.argv.slice(2);
+const outIdx = argv.indexOf("--out");
+const outName = outIdx >= 0 ? argv.splice(outIdx, 2)[1] : `${new Date().toISOString().slice(0, 10)}-scorer-corrections`;
+const baseArg = argv[0];
+if (!baseArg) { console.error("usage: rescore.mjs <baseDir> [--out <dirname>]"); process.exit(1); }
+const baseDir = path.isAbsolute(baseArg) ? baseArg : path.join(RES, baseArg);
+const baseFile = path.join(baseDir, "run.json");
+if (!fs.existsSync(baseFile)) { console.error(`no run.json in ${baseDir}`); process.exit(1); }
+
+// Current answer predicates, keyed the way rows identify themselves.
+const currentPredicate = {};
+for (const [site, tasks] of Object.entries(loadTasksBySite()))
+  for (const task of tasks) if (task.predicate?.type === "answer") currentPredicate[`${site}|${task.id}`] = task.predicate;
+
+// Last assistant text in a stored transcript, across the arms' shapes:
+// Anthropic content blocks, OpenAI Responses nested messages, Stagehand's
+// plain `message` field.
+function finalText(row) {
+  if (row.final_text) return row.final_text;
+  const texts = [];
+  for (const entry of row.transcript ?? []) {
+    if (entry.role === "assistant" && Array.isArray(entry.content)) {
+      for (const item of entry.content) {
+        if (item?.type === "text" && item.text?.trim()) texts.push(item.text);
+        if (item?.type === "message") {
+          for (const inner of item.content ?? []) {
+            if (inner?.type === "output_text" && inner.text?.trim()) texts.push(inner.text);
+          }
+        }
+      }
+    } else if (typeof entry.message === "string" && entry.message.trim()) {
+      texts.push(entry.message);
+    }
+  }
+  return texts.at(-1) ?? "";
+}
+
+const base = JSON.parse(fs.readFileSync(baseFile, "utf8"));
+const cellKey = (row) => `${row.site}|${row.arm}|${row.model}|${row.task_id}`;
+const cells = new Map();
+for (const row of base.rows ?? []) {
+  if (!cells.has(cellKey(row))) cells.set(cellKey(row), []);
+  cells.get(cellKey(row)).push(row);
+}
+
+const promotions = [], demotions = [];
+const correctedRows = [];
+for (const [key, rows] of cells) {
+  const predicate = currentPredicate[`${rows[0].site}|${rows[0].task_id}`];
+  if (!predicate) continue; // probe-scored task: not re-scorable offline
+  const rescored = [];
+  let changed = false;
+  for (const row of rows) {
+    const text = finalText(row);
+    // No stored answer means nothing to re-score — carry the row through
+    // unchanged so the emitted cell stays complete.
+    const verdict = text ? await score(predicate, null, text) : null;
+    const was = Boolean(row.pass ?? row.success);
+    const now = verdict ? verdict.pass : was;
+    if (now !== was) {
+      changed = true;
+      (now ? promotions : demotions).push({ key, run_id: row.run_id, text: text.replace(/\s+/g, " ").slice(0, 160) });
+    }
+    rescored.push({
+      ...row,
+      pass: now,
+      success: now,
+      failure_category: now ? "" : (verdict?.detail ?? row.failure_category ?? ""),
+      rescored: now === was ? (row.rescored ?? "") : (now ? "corrected-false-negative" : "corrected-false-positive"),
+      source: `${path.basename(baseDir)} rescored`,
+    });
+  }
+  if (changed) correctedRows.push(...rescored);
+}
+
+if (!correctedRows.length) {
+  console.log("no cells changed — no correction artifact written");
+  process.exit(0);
+}
+
+const out = path.join(RES, outName);
+fs.mkdirSync(out, { recursive: true });
+fs.writeFileSync(path.join(out, "results.csv"), csv(correctedRows));
+fs.writeFileSync(path.join(out, "run.json"), JSON.stringify({
+  options: {
+    correction: "scorer",
+    base: path.basename(baseDir),
+    generated: new Date().toISOString().slice(0, 10),
+    promotions: promotions.length,
+    demotions: demotions.length,
+    note: "Complete cells re-scored against the current answer predicates. Raw run directories were not modified.",
+  },
+  rows: correctedRows,
+}, null, 2));
+
+const cellCount = new Set(correctedRows.map(cellKey)).size;
+console.log(`${outName}: ${cellCount} corrected cell(s), ${correctedRows.length} rows`);
+console.log(`  promotions (fail -> pass): ${promotions.length}`);
+console.log(`  demotions  (pass -> fail): ${demotions.length}`);
+// Demotions retract a result that was previously published. They are legitimate
+// when the old predicate accepted a wrong answer, but they must never pass
+// unnoticed — print every one in full.
+for (const d of demotions) console.log(`  DEMOTED ${d.key}\n    ${d.text}`);

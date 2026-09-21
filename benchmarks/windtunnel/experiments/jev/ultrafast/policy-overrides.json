@@ -1,0 +1,4 @@
+{
+  "DONE": "The needed information is visible in the current observation, or the requested action has visibly succeeded. Hand off to the separate final-answer writer.",
+  "BLOCKED": "No reasonable supported next step can progress toward the goal, or required information from the user is missing."
+}
