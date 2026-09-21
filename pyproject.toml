@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "anthropic==1.6.0",
     "fastapi>=0.115.0",
+    "mcp>=2.2.0",
     "ocrmac==1.0.1",
     "openai>=3.16.2",
     "playwright>=1.63.0",

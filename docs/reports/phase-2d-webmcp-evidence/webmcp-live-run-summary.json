@@ -1,0 +1,7 @@
+{
+  "browser_status": "{\n  \"url\": \"file:///Users/admin/typesafe-computer-use/tests/fixtures/hybrid_closure.html\",\n  \"title\": \"TypeSafe Hybrid Closure Test\",\n  \"is_connected\": true,\n  \"navigation_epoch\": 2,\n  \"cdp_port\": 50868,\n  \"execution_gate_locked\": false\n}",
+  "browser_fill_result": "{\n  \"success\": true,\n  \"data\": {\n    \"filled\": \"#search-input\",\n    \"value\": \"WebMCP Automation Query 2026\"\n  },\n  \"error\": null,\n  \"side_effect_state\": \"confirmed_success\",\n  \"navigation_epoch\": 2\n}",
+  "browser_click_result": "{\n  \"success\": true,\n  \"data\": {\n    \"clicked\": \"#submit-btn\"\n  },\n  \"error\": null,\n  \"side_effect_state\": \"confirmed_success\",\n  \"navigation_epoch\": 2\n}",
+  "browser_verify_result": "{\n  \"success\": true,\n  \"data\": {\n    \"text\": \"Submitted: WebMCP Automation Query 2026\"\n  },\n  \"error\": null,\n  \"side_effect_state\": \"not_started\",\n  \"navigation_epoch\": 2\n}",
+  "execution_gate_enforced": true
+}

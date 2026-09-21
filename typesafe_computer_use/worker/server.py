@@ -88,6 +88,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Optional WebMCP Model Context Protocol SSE mount
+if os.environ.get("WEBMCP_ENABLED", "true").lower() in ("true", "1", "yes"):
+    from typesafe_computer_use.mcp import create_webmcp_server
+
+    _dom_adapter = getattr(service.router, "dom_adapter", None)
+    _session_mgr = getattr(_dom_adapter, "session_manager", None)
+    mcp_server = create_webmcp_server(
+        session_manager=_session_mgr,
+        dom_adapter=_dom_adapter,
+        execution_gate=ExecutionGate.get_instance(),
+    )
+    app.mount("/mcp", mcp_server.sse_app())
+
 
 def verify_auth_token(
     authorization: str | None = Header(default=None),
