@@ -1,0 +1,655 @@
+{
+  "options": {
+    "preset": "smoke",
+    "sites": "directory-9d8",
+    "arms": [
+      "ts-webmcp-native",
+      "ts-browser-dom",
+      "ts-visual",
+      "ts-hybrid-auto"
+    ],
+    "seed": 1,
+    "budget": 2,
+    "perturbed": false,
+    "models": {},
+    "maxConsecutiveInfra": 2,
+    "taskIds": [
+      "directory-search",
+      "directory-filter"
+    ],
+    "defaultModel": "gpt-5.6-sol",
+    "n": 1,
+    "label": "phase3c-live-sol",
+    "fake": false,
+    "model": "gpt-5.6-sol",
+    "armModels": {
+      "ts-webmcp-native": "gpt-5.6-sol",
+      "ts-browser-dom": "gpt-5.6-sol",
+      "ts-visual": "gpt-5.6-sol",
+      "ts-hybrid-auto": "gpt-5.6-sol"
+    },
+    "git_revision": "6bdd1a4a6e5bd8c8886a57f26c750cf5c8c0a17f-dirty",
+    "task_set_hash": "07aef320029195b45128a93364d7bbd7c45853ffb8fa5e54613d0dd37e4063d2",
+    "goldens_hash": "88421834fd03b608de6ec39ec125305c9f468f9f9729e801b29aef317eb3f2ec",
+    "prices": [
+      [
+        "claude-fable-5",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "claude-opus-5",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-opus-4",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-sonnet-5",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4-6",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-haiku-4",
+        [
+          1,
+          5,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-6-astra",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "gpt-5.6-sol",
+        [
+          5,
+          30,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "gpt-5.6-terra",
+        [
+          2.5,
+          15,
+          0.25,
+          3.125
+        ]
+      ],
+      [
+        "gpt-5.6-luna",
+        [
+          1,
+          6,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-5.5",
+        [
+          5,
+          30,
+          0.5,
+          0
+        ]
+      ],
+      [
+        "computer-use-preview",
+        [
+          1.5,
+          6,
+          0.15,
+          0
+        ]
+      ],
+      [
+        "gemini-3.6-flash",
+        [
+          0.75,
+          3.75,
+          0.075,
+          0
+        ]
+      ]
+    ]
+  },
+  "capsules": [
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    }
+  ],
+  "rows": [
+    {
+      "run_id": "directory-search_ts-webmcp-native_5cebac67-6c6f-401d-b306-b1eb0ec343b9",
+      "task_id": "directory-search",
+      "arm": "ts-webmcp-native",
+      "method": "ts-webmcp-native",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "typesafe-local",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3215",
+      "success": false,
+      "pass": false,
+      "failure_category": "harness-agent: native-webmcp-unsupported",
+      "wall_clock_s": "7.748",
+      "reset_s": "7.632",
+      "setup_s": "0.000",
+      "agent_s": "0.116",
+      "ms": 7748,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 0,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:13:50.114Z",
+      "transcript": [
+        {
+          "error": "BLOCKED_BY_BROWSER_SUPPORT: Chrome document.modelContext is undefined",
+          "selected_mode": "webmcp",
+          "executed_mode": null,
+          "webmcp_implementation": "native"
+        }
+      ],
+      "final_text": ""
+    },
+    {
+      "run_id": "directory-filter_ts-webmcp-native_ac2fa630-5b6a-4c34-ab2b-25d2c536ccbd",
+      "task_id": "directory-filter",
+      "arm": "ts-webmcp-native",
+      "method": "ts-webmcp-native",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "typesafe-local",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3215",
+      "success": false,
+      "pass": false,
+      "failure_category": "harness-agent: native-webmcp-unsupported",
+      "wall_clock_s": "7.808",
+      "reset_s": "7.690",
+      "setup_s": "0.000",
+      "agent_s": "0.118",
+      "ms": 7808,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 0,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:13:57.954Z",
+      "transcript": [
+        {
+          "error": "BLOCKED_BY_BROWSER_SUPPORT: Chrome document.modelContext is undefined",
+          "selected_mode": "webmcp",
+          "executed_mode": null,
+          "webmcp_implementation": "native"
+        }
+      ],
+      "final_text": ""
+    },
+    {
+      "run_id": "directory-search_ts-browser-dom_4465e088-d9cf-4fcf-9fd5-e03a30ba78cf",
+      "task_id": "directory-search",
+      "arm": "ts-browser-dom",
+      "method": "ts-browser-dom",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3216",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "13.859",
+      "reset_s": "6.615",
+      "setup_s": "0.000",
+      "agent_s": "7.244",
+      "ms": 13859,
+      "model_turns": 1,
+      "actions_or_tool_calls": 0,
+      "input_tokens": 281,
+      "output_tokens": 10,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 291,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:15:13.173Z",
+      "transcript": [],
+      "final_text": "Final answer: Figma."
+    },
+    {
+      "run_id": "directory-filter_ts-browser-dom_8df4c2ad-da1c-4cd7-bf42-b58c76e4d924",
+      "task_id": "directory-filter",
+      "arm": "ts-browser-dom",
+      "method": "ts-browser-dom",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3216",
+      "success": false,
+      "pass": false,
+      "failure_category": "harness-agent: Command failed: /Users/ponddev/Desktop/My_Project/Demo/typesafe-computer-use/benchmarks/windtunnel/harness/bin/capsule directory-9d8 reset --run-id wt-3216 --port 3216\n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Stopping \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Stopped \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Removing \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Removed \n Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Removing \n Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Removed \n Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Creating \n Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Created \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Creating \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Created \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Starting \n Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Started \n",
+      "wall_clock_s": "0.000",
+      "reset_s": "0.000",
+      "setup_s": "0.000",
+      "agent_s": "0.000",
+      "ms": 0,
+      "model_turns": 0,
+      "actions_or_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "",
+      "caching": "unsupported",
+      "tokens": 0,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": "default",
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:16:44.192Z",
+      "transcript": [],
+      "final_text": ""
+    },
+    {
+      "run_id": "directory-search_ts-visual_6b1dfae9-2641-4941-82ad-cb3d862251a8",
+      "task_id": "directory-search",
+      "arm": "ts-visual",
+      "method": "ts-visual",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3217",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "25.858",
+      "reset_s": "6.768",
+      "setup_s": "0.000",
+      "agent_s": "19.090",
+      "ms": 25858,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 1276,
+      "output_tokens": 499,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 1775,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:17:30.184Z",
+      "transcript": [
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 43048,
+          "screenshot_index": 1
+        }
+      ],
+      "final_text": "Final answer: Figma"
+    },
+    {
+      "run_id": "directory-filter_ts-visual_42c3dab8-f14f-4a44-890f-20e6b96b8747",
+      "task_id": "directory-filter",
+      "arm": "ts-visual",
+      "method": "ts-visual",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3217",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "29.906",
+      "reset_s": "8.197",
+      "setup_s": "0.000",
+      "agent_s": "21.709",
+      "ms": 29906,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 1281,
+      "output_tokens": 528,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 1809,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:18:00.141Z",
+      "transcript": [
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 43048,
+          "screenshot_index": 1
+        }
+      ],
+      "final_text": "Final answer: GitHub."
+    },
+    {
+      "run_id": "directory-search_ts-hybrid-auto_75a19d92-c8b8-46cd-82ff-20598fa00b3f",
+      "task_id": "directory-search",
+      "arm": "ts-hybrid-auto",
+      "method": "ts-hybrid-auto",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3218",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "9.748",
+      "reset_s": "7.488",
+      "setup_s": "0.000",
+      "agent_s": "2.260",
+      "ms": 9748,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 281,
+      "output_tokens": 10,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 291,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:19:25.518Z",
+      "transcript": [
+        {
+          "action": "fallback",
+          "from_mode": "webmcp_native",
+          "to_mode": "browser_dom",
+          "selected_mode": "webmcp",
+          "executed_mode": "browser_dom",
+          "fallback_from": "webmcp",
+          "fallback_to": "browser_dom",
+          "reason": "Native WebMCP document.modelContext unavailable"
+        }
+      ],
+      "final_text": "Final answer: Figma."
+    },
+    {
+      "run_id": "directory-filter_ts-hybrid-auto_07f73cd3-69d7-473a-aa28-f297dfc69a6d",
+      "task_id": "directory-filter",
+      "arm": "ts-hybrid-auto",
+      "method": "ts-hybrid-auto",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3218",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "9.405",
+      "reset_s": "6.932",
+      "setup_s": "0.000",
+      "agent_s": "2.473",
+      "ms": 9405,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 286,
+      "output_tokens": 16,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 302,
+      "est_cost_usd": 0,
+      "cost_estimated": "",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:19:34.956Z",
+      "transcript": [
+        {
+          "action": "fallback",
+          "from_mode": "webmcp_native",
+          "to_mode": "browser_dom",
+          "selected_mode": "webmcp",
+          "executed_mode": "browser_dom",
+          "fallback_from": "webmcp",
+          "fallback_to": "browser_dom",
+          "reason": "Native WebMCP document.modelContext unavailable"
+        }
+      ],
+      "final_text": "Final answer: GitHub — Where the world builds software."
+    }
+  ],
+  "verdicts": [
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-webmcp-native",
+      "solved": false,
+      "passes": 0,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-webmcp-native",
+      "solved": false,
+      "passes": 0,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-browser-dom",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-browser-dom",
+      "solved": false,
+      "passes": 0,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-visual",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-visual",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-hybrid-auto",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-hybrid-auto",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+run_id,task_id,arm,model,tool_version,site,start_url,success,failure_category,wall_clock_s,reset_s,setup_s,agent_s,model_turns,actions_or_tool_calls,input_tokens,output_tokens,cached_tokens,cache_write_tokens,caching,est_cost_usd,cost_estimated,snapshot_source,stop_reason,refusal,truncated,effort,retries,retry_wait_ms,budget_exhausted,temperature,perturbation_id,spec_shape,rescored,source,timestamp
+directory-search_ts-webmcp-native_5cebac67-6c6f-401d-b306-b1eb0ec343b9,directory-search,ts-webmcp-native,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3215,false,harness-agent: native-webmcp-unsupported,7.748,7.632,0.000,0.116,1,1,0,0,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:13:50.114Z
+directory-filter_ts-webmcp-native_ac2fa630-5b6a-4c34-ab2b-25d2c536ccbd,directory-filter,ts-webmcp-native,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3215,false,harness-agent: native-webmcp-unsupported,7.808,7.690,0.000,0.118,1,1,0,0,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:13:57.954Z
+directory-search_ts-browser-dom_4465e088-d9cf-4fcf-9fd5-e03a30ba78cf,directory-search,ts-browser-dom,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3216,true,,13.859,6.615,0.000,7.244,1,0,281,10,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:15:13.173Z
+directory-filter_ts-browser-dom_8df4c2ad-da1c-4cd7-bf42-b58c76e4d924,directory-filter,ts-browser-dom,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3216,false,"harness-agent: Command failed: /Users/ponddev/Desktop/My_Project/Demo/typesafe-computer-use/benchmarks/windtunnel/harness/bin/capsule directory-9d8 reset --run-id wt-3216 --port 3216
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Stopping 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Stopped 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Removing 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Removed 
+ Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Removing 
+ Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Removed 
+ Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Creating 
+ Network webmcp-directory-9d8-wt-3216-93b43d2fdccd_default Created 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Creating 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Created 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Starting 
+ Container webmcp-directory-9d8-wt-3216-93b43d2fdccd-app-1 Started 
+",0.000,0.000,0.000,0.000,0,0,0,0,0,0,unsupported,0,,,,false,false,,0,0,false,default,none,none,,,2026-09-21T07:16:44.192Z
+directory-search_ts-visual_6b1dfae9-2641-4941-82ad-cb3d862251a8,directory-search,ts-visual,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3217,true,,25.858,6.768,0.000,19.090,1,1,1276,499,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:17:30.184Z
+directory-filter_ts-visual_42c3dab8-f14f-4a44-890f-20e6b96b8747,directory-filter,ts-visual,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3217,true,,29.906,8.197,0.000,21.709,1,1,1281,528,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:18:00.141Z
+directory-search_ts-hybrid-auto_75a19d92-c8b8-46cd-82ff-20598fa00b3f,directory-search,ts-hybrid-auto,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3218,true,,9.748,7.488,0.000,2.260,1,1,281,10,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:19:25.518Z
+directory-filter_ts-hybrid-auto_07f73cd3-69d7-473a-aa28-f297dfc69a6d,directory-filter,ts-hybrid-auto,gpt-5.6-sol,typesafe-computer-use@0.2.0,directory-9d8,http://127.0.0.1:3218,true,,9.405,6.932,0.000,2.473,1,1,286,16,0,0,unsupported,0,,typesafe-computer-use@0.2.0,,false,false,provider-default,0,0,false,0,none,none,,,2026-09-21T07:19:34.956Z

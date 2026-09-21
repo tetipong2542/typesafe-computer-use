@@ -436,15 +436,23 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     const driver = driverOptions.driverInstance || createModelDriver({ armId, model, maxTurns: 5, ...driverOptions });
-    const messages = [{ role: "user", content: task.prompt || `Perform task: ${task.id}` }];
+    const messages = [];
     let finalText = "";
     let failure = null;
 
     while (driver.turnIndex < driver.maxTurns) {
+      const pageText = await page.locator("body").innerText().catch(() => "");
+      const domSummary = pageText.slice(0, 3000);
+      const turnPrompt = driver.turnIndex === 0
+        ? `${task.prompt || `Perform task: ${task.id}`}\n\nPage text content:\n${domSummary}\n\nProvide the requested answer clearly beginning with 'Final answer:'.`
+        : `Updated page text content:\n${domSummary}\n\nProvide the requested answer clearly beginning with 'Final answer:'.`;
+
+      messages.push({ role: "user", content: turnPrompt });
+
       let turnRes;
       try {
         turnRes = await driver.createTurn({
-          system: "You operate a web browser by reading the page structure and acting on elements. Do not use visual or screenshot tools.",
+          system: "You operate a web browser by inspecting text on the webpage. Always state your final answer plainly beginning with 'Final answer:'.",
           messages,
         });
       } catch (e) {
@@ -581,7 +589,7 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       let turnRes;
       try {
         turnRes = await driver.createTurn({
-          system: "You operate a web browser with screenshots, mouse, and keyboard. Output computer actions with coordinates or final answer.",
+          system: "You operate a web browser with visual screenshots. Inspect the screenshot carefully and provide the final result plainly beginning with 'Final answer:'.",
           messages,
           screenshot: screenshotBuf,
         });

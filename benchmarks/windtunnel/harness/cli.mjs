@@ -97,9 +97,12 @@ export function parseArgs(argv) {
       else if (flag === "--max-consecutive-infra") options.maxConsecutiveInfra = Number(value);
       else if (flag === "--label") options.label = value;
       else if (flag === "--model") {
-        const [arm, ...model] = value.split("=");
-        if (!arm || !model.length) throw new Error("--model must be arm=model");
-        options.models[arm] = model.join("=");
+        if (value.includes("=")) {
+          const [arm, ...model] = value.split("=");
+          options.models[arm] = model.join("=");
+        } else {
+          options.defaultModel = value;
+        }
       } else throw new Error(`unknown option: ${flag}`);
     }
   }
@@ -129,7 +132,7 @@ export function planRuns(options, env = process.env, methods = ARMS) {
   for (const armId of options.arms) {
     const method = methods[armId];
     if (!method) throw new Error(`unknown arm: ${armId}`);
-    const model = options.models[armId] ?? method.model;
+    const model = options.models[armId] ?? options.defaultModel ?? method.model;
     const key = typeof method.key === "function" ? method.key(model) : method.key;
     if (key && !env[key]) { notices.push(`Skipping ${armId}: ${key} is not set.`); continue; }
     if (method.paid && options.budget <= 0) { notices.push(`Skipping ${armId}: budget hard stop reached.`); continue; }

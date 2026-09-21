@@ -448,25 +448,6 @@ export class OpenAICodexModelDriver extends ModelDriver {
     const data = await res.json();
     const latency_ms = Date.now() - startMs;
 
-    const usage = data.usage || {};
-    const inputTokens = usage.prompt_tokens || 0;
-    const outputTokens = usage.completion_tokens || 0;
-    const modelSnapshot = data.model || this.model;
-    const requestId = data.id || `codex-req-${Date.now()}`;
-
-    // Record metrics. Note: Since this uses ChatGPT Plus tokens via Codex authentication,
-    // the actual financial billing to API accounts is $0.00, while token usage is tracked.
-    this.recordUsage({
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      image_tokens: screenshot ? 800 : 0,
-      model_snapshot: modelSnapshot,
-      provider_request_id: requestId,
-      latency_ms,
-    });
-
     const choice = data.choices?.[0];
     const message = choice?.message || {};
     const toolCalls = [];
@@ -492,6 +473,43 @@ export class OpenAICodexModelDriver extends ModelDriver {
     }
 
     const finalText = message.content || "";
+
+    const usage = data.usage || {};
+    let inputTokens = usage.prompt_tokens || 0;
+    let outputTokens = usage.completion_tokens || 0;
+    const modelSnapshot = data.model || this.model;
+    const requestId = data.id || `codex-req-${Date.now()}`;
+
+    // Token estimation heuristic fallback if proxy returned 0 usage
+    if (inputTokens === 0) {
+      let chars = (effectiveSystem || "").length;
+      for (const m of formattedMessages) {
+        if (typeof m.content === "string") chars += m.content.length;
+        else if (Array.isArray(m.content)) {
+          for (const p of m.content) if (p.type === "text") chars += (p.text || "").length;
+        }
+      }
+      if (formattedTools) chars += JSON.stringify(formattedTools).length;
+      inputTokens = Math.max(1, Math.ceil(chars / 4));
+    }
+    if (outputTokens === 0) {
+      let chars = (finalText || "").length;
+      if (toolCalls.length > 0) chars += JSON.stringify(toolCalls).length;
+      outputTokens = Math.max(1, Math.ceil(chars / 4));
+    }
+
+    // Record metrics. Note: Since this uses ChatGPT Plus tokens via Codex authentication,
+    // the actual financial billing to API accounts is $0.00, while token usage is tracked.
+    this.recordUsage({
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      image_tokens: screenshot ? 800 : 0,
+      model_snapshot: modelSnapshot,
+      provider_request_id: requestId,
+      latency_ms,
+    });
 
     return {
       type: toolCalls.length > 0 ? "tool_use" : "final_answer",
