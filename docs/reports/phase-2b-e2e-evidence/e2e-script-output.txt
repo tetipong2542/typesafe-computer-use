@@ -1,0 +1,50 @@
+==========================================================
+ Starting Full Application Tart VM E2E Verification: macos-worker
+==========================================================
+[1/9] VM 'macos-worker' verified in Tart registry.
+[2/9] Polling for VM IP address...
+VM acquired IP: 192.168.64.3
+[3/9] Testing SSH connectivity and system metadata...
+=== Guest macOS System Info ===
+ProductName:		macOS
+ProductVersion:		14.8.7
+BuildVersion:		23J520
+arm64
+[4/9] Verifying GUI session and Headful Chrome inside Guest...
+WindowServer is running. GUI desktop session confirmed.
+Google Chrome 153.0.8010.53 
+[5/9] Checking Worker API daemon on guest (http://192.168.64.3:8000/healthz)...
+Worker API daemon is responding.
+[6/9] Verifying CDP loopback binding inside Guest (strictly 127.0.0.1)...
+CDP binding security verified: no public listeners.
+[7/9] Submitting Headful Browser Task via POST /tasks...
+Create Task Response: {"task_id":"task_20260921-024942_9d3aa7","run_id":"run_20260921-024942_4713bac8","state":"queued","goal":"Open Google Chrome and view page"}
+Active Task ID: task_20260921-024942_9d3aa7
+Waiting for Step 1 perception and shadow telemetry execution...
+  [Poll 1/20] State: running, Step: 1, Screenshot: 
+  [Poll 2/20] State: running, Step: 1, Screenshot: step-001-raw.png
+  [Poll 3/20] State: running, Step: 1, Screenshot: step-001.png
+Verifying SQLite telemetry and filesystem artifacts on Guest...
+Verified step_perceived event with screenshot_id: step-001.png
+Verified action_executed event with telemetry: {'router_mode': 'shadow', 'executed_mode': 'visual_grounded', 'shadow_mode': None, 'shadow_target': None, 'shadow_confidence': 0.0, 'shadow_match_result': 'visual_failed', 'router_reason': 'Shadow mode: executed visual action. Shadow DOM evaluation: DOM probe not applicable or failed', 'browser_session_id': 'session_1789958958', 'page_id': 'default', 'navigation_epoch': 0, 'side_effect_state': 'confirmed_failure', 'duration_ms': 0.17666600001575716, 'adapter': 'VisualComputerUseAdapter'}
+Shadow router invariants verified: router_mode=shadow, executed_mode=visual_grounded
+Verifying Screenshot API endpoint (GET /tasks/task_20260921-024942_9d3aa7/screenshot)...
+Retrieved screenshot verified: 1440x900 PNG (RGB)
+[8/9] Testing Human Takeover (POST /tasks/task_20260921-024942_9d3aa7/takeover)...
+Takeover Response: {"status":"takeover","task_id":"task_20260921-024942_9d3aa7","input_locked":true,"vnc_uri":"vnc://admin@192.168.64.3","guest_ip":"192.168.64.3","instructions":"Open native macOS Screen Sharing on host: open 'vnc://admin@192.168.64.3'. Enter guest credentials in macOS Screen Sharing UI."}
+Received VNC URI: vnc://admin@192.168.64.3
+VNC URI credential sanitization verified successfully.
+Screen Sharing VNC port 5900 verified listening on guest.
+Guest input lock file /tmp/typesafe_input_locked confirmed engaged during takeover.
+Releasing Takeover...
+Release Takeover Response: {"status":"takeover_released","task_id":"task_20260921-024942_9d3aa7","next_state":"paused","perception_cache_cleared":true,"instructions":"Call /resume when ready for agent to re-perceive screen and continue"}
+[9/9] Testing Emergency Stop and Task Reset...
+Emergency Stop Response: {"status":"emergency_stopped","task_id":"task_20260921-024942_9d3aa7","input_locked":true}
+Emergency stop confirmed input_locked=True.
+Guest input lock file confirmed engaged on emergency stop.
+Reset Response: {"status":"reset","task_id":"task_20260921-024942_9d3aa7","input_locked":false,"message":"Emergency lock reset. Synthetic input unlocked."}
+Reset confirmed input_locked=False.
+Guest input lock file confirmed removed after reset.
+==========================================================
+ Full Application Tart VM E2E Verification: PASSED
+==========================================================

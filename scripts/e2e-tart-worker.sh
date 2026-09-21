@@ -69,7 +69,8 @@ if [[ -z "${VM_IP}" ]]; then
 fi
 
 SSH_KEY="${HOME}/.ssh/id_ed25519_tart"
-SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+SSH_KNOWN_HOSTS="${HOME}/.ssh/known_hosts_tart"
+SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${SSH_KNOWN_HOSTS} -o ConnectTimeout=10"
 SSH_CMD="ssh ${SSH_OPTS} admin@${VM_IP}"
 
 # Dynamically resolve guest-local token if not passed in host environment
@@ -83,7 +84,7 @@ fi
 
 # 3. SSH Connectivity & Guest Environment
 echo "[3/9] Testing SSH connectivity and system metadata..."
-ssh-keyscan -H "${VM_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H "${VM_IP}" >> "${SSH_KNOWN_HOSTS}" 2>/dev/null || true
 
 ${SSH_CMD} "
     echo '=== Guest macOS System Info ==='
@@ -174,7 +175,7 @@ for i in {1..20}; do
     SHOT_ID=$(echo "${TASK_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('latest_screenshot_id') or '')")
     STATE=$(echo "${TASK_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('state', ''))")
     echo "  [Poll $i/20] State: ${STATE}, Step: ${STEP}, Screenshot: ${SHOT_ID}"
-    if [[ "${STEP}" -ge 1 && -n "${SHOT_ID}" ]]; then
+    if [[ "${STEP}" -ge 1 && "${SHOT_ID}" =~ ^step-[0-9]+\.png$ ]]; then
         TASK_RUNNING=true
         break
     fi
@@ -261,7 +262,14 @@ echo "[8/9] Testing Human Takeover (POST /tasks/${TASK_ID}/takeover)..."
 # Pause first to allow takeover
 curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/pause" -H "${AUTH_HEADER}" >/dev/null || true
 
-TAKEOVER_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/takeover" -H "${AUTH_HEADER}")
+TAKEOVER_RESP=""
+for _ in {1..10}; do
+    TAKEOVER_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/takeover" -H "${AUTH_HEADER}")
+    if [[ "${TAKEOVER_RESP}" =~ "takeover" && ! "${TAKEOVER_RESP}" =~ "Failed" ]]; then
+        break
+    fi
+    sleep 1
+done
 echo "Takeover Response: ${TAKEOVER_RESP}"
 
 # Verify takeover response

@@ -69,11 +69,18 @@ if [[ -n "${HOST_PUB_KEY}" ]]; then
     tart exec "${VM_NAME}" /bin/bash -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${HOST_PUB_KEY}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>/dev/null || true
 fi
 
-ssh-keyscan -H "${VM_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
+SSH_KEY="${HOME}/.ssh/id_ed25519_tart"
+SSH_KNOWN_HOSTS="${HOME}/.ssh/known_hosts_tart"
+SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${SSH_KNOWN_HOSTS} -o BatchMode=yes -o ConnectTimeout=5"
+if [[ -f "${SSH_KEY}" ]]; then
+    SSH_OPTS="-i ${SSH_KEY} ${SSH_OPTS}"
+fi
 
-if ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 admin@"${VM_IP}" "true" 2>/dev/null; then
+ssh-keyscan -H "${VM_IP}" >> "${SSH_KNOWN_HOSTS}" 2>/dev/null || true
+
+if ssh ${SSH_OPTS} admin@"${VM_IP}" "true" 2>/dev/null; then
     echo "SSH connection established successfully."
-    ssh -o StrictHostKeyChecking=no admin@"${VM_IP}" "
+    ssh ${SSH_OPTS} admin@"${VM_IP}" "
         echo '=== Remote macOS System Info via SSH ==='
         sw_vers
         uname -m

@@ -890,11 +890,13 @@ class WorkerService:
             import traceback
             log(f"Worker task error: {e}\n{traceback.format_exc()}")
         finally:
-            if not controller.emergency_stopped:
+            if not controller.emergency_stopped and not controller.is_takeover:
                 macos.set_input_lock(False)
             final_state = TaskState.SUCCEEDED if outcome in ("done", "succeeded") else TaskState.STOPPED
             if controller.emergency_stopped:
                 final_state = TaskState.STOPPED
+            elif controller.is_takeover:
+                final_state = TaskState.TAKEOVER
             elif outcome == "failed":
                 final_state = TaskState.FAILED
             elif outcome == "awaiting_review" or "awaiting manual review" in outcome.lower():

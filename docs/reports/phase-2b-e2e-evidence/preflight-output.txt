@@ -1,0 +1,23 @@
+==========================================================
+ Starting Preflight Verification for Tart VM: macos-worker
+==========================================================
+[1/5] VM 'macos-worker' is present in Tart registry.
+[2/5] VM 'macos-worker' is already running.
+[3/5] Waiting for VM to acquire IP address...
+VM acquired IP: 192.168.64.3
+[4/5] Testing guest system connectivity and metadata...
+SSH connection established successfully.
+=== Remote macOS System Info via SSH ===
+ProductName:		macOS
+ProductVersion:		14.8.7
+BuildVersion:		23J520
+arm64
+Disk Free:
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s1s1    46Gi   9.6Gi    18Gi    36%    406k  185M    0%   /
+[5/5] Testing VNC port 5900 availability for Human Takeover...
+VNC port 5900 is listening and accessible.
+Takeover URI verified: vnc://admin@192.168.64.3
+==========================================================
+ Tart VM Preflight Verification: SUCCESS
+==========================================================
