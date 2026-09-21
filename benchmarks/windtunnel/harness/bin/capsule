@@ -603,7 +603,7 @@ manifest_finalize_prepare() {
   }
   now=$(capsule_timestamp)
   if [ -d "$CAPSULE_PRIVATE_DIR/reset-snapshots" ]; then
-    snapshots=$(find "$CAPSULE_PRIVATE_DIR/reset-snapshots" -maxdepth 1 -type f -name '*.tar' -printf '%f\n' \
+    snapshots=$(cd "$CAPSULE_PRIVATE_DIR/reset-snapshots" && (ls -1 *.tar 2>/dev/null || true) \
       | sed 's/\.tar$//' | sort | jq -Rsc 'split("\n") | map(select(length > 0))')
   fi
   temporary="$MANIFEST_FILE.tmp.$$"

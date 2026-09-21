@@ -305,7 +305,7 @@ capsule_compose_status() {
   while IFS= read -r check; do
     path=$(jq -r .path <<<"$check")
     contains=$(jq -r '.contains // ""' <<<"$check")
-    body=$(curl -fsS --max-time 5 "$CAPSULE_BASE_URL$path") || return 1
+    body=$(curl -fsS --max-time 15 "$CAPSULE_BASE_URL$path") || return 1
     [ -z "$contains" ] || [[ "$body" == *"$contains"* ]] || return 1
   done < <(jq -c '.runtime.healthChecks[]' "$CAPSULE_CONFIG_PATH")
 }
