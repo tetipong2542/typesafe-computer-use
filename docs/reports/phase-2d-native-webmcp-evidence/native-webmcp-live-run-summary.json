@@ -1,34 +1,47 @@
 {
+  "timestamp": "2026-09-21T05:11:18Z",
+  "phase": "2D-C Native WebMCP Standards Closure",
+  "origin": "http://127.0.0.1:51844",
+  "preflight_audit": {
+    "hasModelContext": true,
+    "modelContextType": "object",
+    "originAgentCluster": true,
+    "isSecureContext": true,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "hasGetTools": true,
+    "hasExecuteTool": true,
+    "hasRegisterTool": true
+  },
   "discovered_tools": [
     {
-      "name": "search_products",
-      "source": "imperative",
-      "consequential": false,
-      "hash": "ce7745922cb321a0"
-    },
-    {
       "name": "add_to_cart",
-      "source": "imperative",
+      "source": "declarative_form",
       "consequential": false,
       "hash": "22f546c9f3e3f55a"
     },
     {
-      "name": "update_quantity",
-      "source": "imperative",
-      "consequential": false,
-      "hash": "335b79ca2e24d7df"
-    },
-    {
       "name": "checkout",
-      "source": "imperative",
+      "source": "declarative_form",
       "consequential": true,
       "hash": "4bdf34ceab1954d5"
+    },
+    {
+      "name": "search_products",
+      "source": "declarative_form",
+      "consequential": false,
+      "hash": "ce7745922cb321a0"
     },
     {
       "name": "subscribe_newsletter",
       "source": "declarative_form",
       "consequential": false,
-      "hash": "540cbcb88af917d1"
+      "hash": "c836867bc7209c84"
+    },
+    {
+      "name": "update_quantity",
+      "source": "declarative_form",
+      "consequential": false,
+      "hash": "335b79ca2e24d7df"
     }
   ],
   "step_2_search": {
@@ -36,27 +49,18 @@
     "side_effect_state": "confirmed_success",
     "status_dom": "Status: Searched for 'MacBook Pro M3'"
   },
-  "step_3_add_to_cart": {
-    "executed_mode": "webmcp",
-    "cart_count": "2",
-    "cart_items": "prod_macbook: 2 unit(s)"
+  "step_3_mutations": {
+    "cart_count": 5
   },
-  "step_4_update_quantity": {
-    "executed_mode": "webmcp",
-    "cart_count": "5"
+  "step_4_declarative": {
+    "newsletter_status": "Newsletter: Subscribed operator.test@typesafe.internal (agent=true)"
   },
-  "step_5_consequential_checkout": {
+  "step_5_consequential": {
     "unapproved_halted": true,
-    "approved_success": true,
-    "order_status": "Order Confirmed: ORD-589406 shipped to 1 Infinite Loop, Cupertino, CA"
-  },
-  "step_6_fallback_missing_tool": {
-    "executed_mode": "browser_dom",
-    "dom_result": "Clicked Successfully"
-  },
-  "step_7_non_webmcp_site": {
-    "executed_mode": "browser_dom",
-    "status": "Submitted:"
-  },
-  "timestamp": "2026-09-21T04:51:07Z"
+    "argument_bypass_blocked": true,
+    "server_approval_id": "appr_e2e_1789967480585",
+    "authorized_success": true,
+    "single_use_consumed": true,
+    "order_status": "Order Confirmed: ORD-253217 shipped to 1 Infinite Loop, Cupertino, CA"
+  }
 }

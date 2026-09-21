@@ -209,13 +209,13 @@ def test_v1_legacy_schema_migration_to_v3(tmp_path: Path):
     # 2. Open with WorkerDatabase -> must trigger migration
     db = WorkerDatabase(db_path=db_path)
 
-    # 3. Verify user_version upgraded to 3
-    assert db.get_schema_version() == 3
+    # 3. Verify user_version upgraded to current schema version (4)
+    assert db.get_schema_version() == 4
 
-    # 4. Verify all 42 columns exist (17 v1 + 16 Phase 2A + 9 Phase 2B)
+    # 4. Verify all 44 columns exist (17 v1 + 16 Phase 2A + 9 Phase 2B + 2 Phase 2D)
     with db._get_connection() as conn:
         cols = {row["name"] for row in conn.execute("PRAGMA table_info(events);").fetchall()}
-        assert len(cols) == 42
+        assert len(cols) == 44
 
     # 5. Verify pre-existing v1 event is retrieved and backwards-compatible
     events = db.get_events("task_pre_2a")

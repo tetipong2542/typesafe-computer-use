@@ -156,7 +156,9 @@ class ExecutionGate:
         set_input_lock(True)
         # 2. Close gate and await cancellation of in-flight tasks
         await self.cancel_all_in_flight(reason="Emergency Stop")
-        # 3. Update DB state if provided
+        # 3. Revoke all pending approvals and update DB state if provided
+        if db:
+            db.revoke_all_approvals(task_id)
         if task_id and db:
             from .state import TaskState
             db.update_task(task_id, state=TaskState.STOPPED, outcome="Emergency stop executed", error="Emergency stop triggered via Execution Gate")
@@ -165,6 +167,8 @@ class ExecutionGate:
         """Enforce takeover: lock automation inputs and cancel running adapter operations."""
         set_input_lock(True)
         await self.cancel_all_in_flight(reason="Human Takeover")
+        if db:
+            db.revoke_all_approvals(task_id)
         if task_id and db:
             from .state import TaskState
             db.update_task(task_id, state=TaskState.TAKEOVER)

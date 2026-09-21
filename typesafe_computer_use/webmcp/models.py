@@ -51,3 +51,29 @@ class WebMCPInvocationResult(BaseModel):
     untrusted_output: str | None = None
     origin: str = ""
     navigation_epoch: int = 0
+    implementation_mode: str = "native"
+
+
+def compute_arguments_hash(arguments: dict[str, Any]) -> str:
+    """Compute stable SHA256 hash of tool invocation arguments excluding control keys."""
+    clean = {k: v for k, v in arguments.items() if not k.startswith("_")}
+    canonical = json.dumps(clean, sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+class WebMCPApprovalRecord(BaseModel):
+    """Server-side record authorizing execution of a consequential WebMCP tool."""
+
+    approval_id: str = Field(..., description="Unique approval identifier")
+    task_id: str = Field(..., description="Associated task identifier")
+    event_id: str = Field(..., description="Event or step requesting approval")
+    origin: str = Field(..., description="Target origin where tool was declared")
+    tool_name: str = Field(..., description="Exact tool name approved")
+    schema_hash: str = Field(..., description="SHA256 hash of the schema at approval time")
+    arguments_hash: str = Field(..., description="SHA256 hash of the specific arguments approved")
+    navigation_epoch: int = Field(..., description="Navigation epoch when approved")
+    expires_at: float = Field(..., description="UNIX timestamp when approval expires")
+    single_use: bool = Field(True, description="Whether approval is invalidated after single invocation")
+    approved_by: str = Field("operator", description="Principal identity granting approval")
+    used: bool = Field(False, description="Whether approval has been consumed")
+

@@ -565,6 +565,8 @@ class BrowserSessionManager:
             "--no-default-browser-check",
             "--disable-popup-blocking",
             "--disable-blink-features=AutomationControlled",
+            "--enable-features=WebMCPTesting,WebMCP",
+            "--enable-blink-features=DocumentModelcontext",
             "about:blank",
         ]
         if self.config.headless:

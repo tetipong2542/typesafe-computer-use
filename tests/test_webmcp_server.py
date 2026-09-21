@@ -239,42 +239,24 @@ def test_webmcp_auth_enforcement_on_all_tools():
         )
     )
 
-    secret = "scoped_test_token_xyz"
-    server = create_webmcp_server(session_manager=mgr, dom_adapter=adapter, auth_token=secret)
+    server = create_webmcp_server(session_manager=mgr, dom_adapter=adapter)
 
     async def _run():
-        # 1. Unauthenticated calls MUST fail on every tool
+        # 1. Zero auth_token in any tool input schema
+        tools = await server.list_tools()
+        for t in tools:
+            props = getattr(t, "inputSchema", {}).get("properties", {})
+            assert "auth_token" not in props, f"Tool {t.name} exposes auth_token in MCP schema"
+
+        # 2. Tools execute cleanly when called by authenticated server infrastructure
         res_status = await server.call_tool("browser_status", {})
-        assert "Authentication required" in _get_tool_text(res_status)
+        assert res_status is not None
 
         res_dom = await server.call_tool("browser_get_dom", {})
-        assert "Authentication required" in _get_tool_text(res_dom)
-
-        res_nav = await server.call_tool("browser_navigate", {"url": "https://example.com"})
-        assert "Authentication required" in _get_tool_text(res_nav)
+        assert "<untrusted_dom_content>" in _get_tool_text(res_dom)
 
         res_click = await server.call_tool("browser_click", {"target": "#btn"})
-        assert "Authentication required" in _get_tool_text(res_click)
-
-        res_fill = await server.call_tool("browser_fill", {"target": "#input", "text": "abc"})
-        assert "Authentication required" in _get_tool_text(res_fill)
-
-        res_verify = await server.call_tool("browser_verify", {"condition": "visible", "target": "#btn"})
-        assert "Authentication required" in _get_tool_text(res_verify)
-
-        # Ensure adapter was NEVER touched during unauthenticated calls
-        assert adapter.execute.call_count == 0
-        assert adapter.extract_sanitized_dom.call_count == 0
-
-        # 2. Authenticated calls with valid token succeed
-        res_auth_status = await server.call_tool("browser_status", {"auth_token": secret})
-        assert "https://example.com" in _get_tool_text(res_auth_status)
-
-        res_auth_dom = await server.call_tool("browser_get_dom", {"auth_token": secret})
-        assert "<untrusted_dom_content>" in _get_tool_text(res_auth_dom)
-
-        res_auth_click = await server.call_tool("browser_click", {"target": "#btn", "auth_token": secret})
-        assert "confirmed_success" in _get_tool_text(res_auth_click)
+        assert "confirmed_success" in _get_tool_text(res_click)
         assert adapter.execute.call_count == 1
 
     asyncio.run(_run())

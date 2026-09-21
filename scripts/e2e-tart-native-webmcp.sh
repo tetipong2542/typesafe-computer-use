@@ -36,6 +36,10 @@ rsync -avz --exclude '__pycache__' \
 echo "[3/4] Running Native WebMCP live test against Headful Chrome in Guest VM..."
 ${SSH_CMD} "
     cd /Users/admin/typesafe-computer-use
+    # Terminate any stale Chrome instance to ensure new launch flags take effect
+    killall 'Google Chrome' 2>/dev/null || true
+    rm -f '/Users/admin/Library/Application Support/TypeSafeWorker/ChromeProfile/browser_ownership.json'
+    rm -f '/Users/admin/Library/Application Support/TypeSafeWorker/ChromeProfile/DevToolsActivePort'
     set -a
     source .env
     set +a
@@ -49,5 +53,5 @@ scp ${SSH_OPTS} -r "admin@${VM_IP}:/Users/admin/typesafe-computer-use/docs/repor
     "${PROJECT_ROOT}/docs/reports/phase-2d-native-webmcp-evidence/"
 
 echo "================================================================================"
-echo " Phase 2D-B Native WebMCP Verification Successfully Completed!"
+echo " Phase 2D-C Native WebMCP Standards Closure Successfully Completed!"
 echo "================================================================================"

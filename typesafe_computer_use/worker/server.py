@@ -147,7 +147,6 @@ if os.environ.get("WEBMCP_ENABLED", "true").lower() in ("true", "1", "yes"):
         session_manager=_session_mgr,
         dom_adapter=_dom_adapter,
         execution_gate=ExecutionGate.get_instance(),
-        auth_token=WORKER_AUTH_TOKEN,
     )
     _sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
     _app_stream = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True, transport_security=_sec)
@@ -193,9 +192,12 @@ app.add_middleware(
 app.add_middleware(MCPAuthAndSecurityMiddleware)
 
 if _app_stream is not None:
-    app.mount("/mcp/legacy/sse", _app_sse)
-    app.mount("/mcp/sse", _app_sse)
+    # Legacy SSE is disabled by default; enabled only via explicit feature flag
+    if os.environ.get("ENABLE_LEGACY_MCP_SSE", "false").lower() in ("true", "1", "yes"):
+        app.mount("/mcp/legacy/sse", _app_sse)
+        app.mount("/mcp/sse", _app_sse)
     app.mount("/mcp", _app_stream)
+
 
 
 def verify_auth_token(
@@ -236,6 +238,19 @@ class CreateApprovalRequest(BaseModel):
     target: str = Field(..., description="Action target description or text")
     screenshot_hash: str = Field(..., description="Hash of screenshot when action was gated")
     action_fingerprint: str = Field(..., description="Fingerprint of action to execute")
+
+
+class CreateWebMCPApprovalRequest(BaseModel):
+    event_id: str = Field(..., description="Event or step ID requesting approval")
+    origin: str = Field(..., description="Target origin")
+    tool_name: str = Field(..., description="WebMCP tool name")
+    schema_hash: str = Field(..., description="Schema hash")
+    arguments_hash: str = Field(..., description="Deterministic arguments hash")
+    navigation_epoch: int = Field(0, description="Navigation epoch")
+    ttl_seconds: float = Field(300.0, description="Approval validity in seconds")
+    single_use: bool = Field(True, description="Whether approval expires upon single use")
+    approved_by: str = Field("operator", description="Principal granting approval")
+
 
 
 # ------------------------------------------------------------------ Endpoints (14 Total)
@@ -344,6 +359,35 @@ def create_approval(task_id: str, event_id: str, req: CreateApprovalRequest) -> 
         "task_id": task_id,
         "event_id": event_id,
         "approval": result,
+    }
+
+
+# 9b. Explicit WebMCP Consequential Approval
+@app.post("/tasks/{task_id}/webmcp-approvals", dependencies=[Depends(verify_auth_token)])
+def create_webmcp_approval(task_id: str, req: CreateWebMCPApprovalRequest) -> dict[str, Any]:
+    """Grant cryptographically verified server-side approval for a consequential WebMCP tool."""
+    approval_id = f"appr_wmcp_{uuid.uuid4().hex[:12]}"
+    record = db.create_webmcp_approval(
+        approval_id=approval_id,
+        task_id=task_id,
+        event_id=req.event_id,
+        origin=req.origin,
+        tool_name=req.tool_name,
+        schema_hash=req.schema_hash,
+        arguments_hash=req.arguments_hash,
+        navigation_epoch=req.navigation_epoch,
+        ttl_seconds=req.ttl_seconds,
+        single_use=req.single_use,
+        approved_by=req.approved_by,
+    )
+    logger.info(
+        "AUDIT WebMCP approval granted: task=%s tool=%s origin=%s schema=%s args=%s approval_id=%s",
+        task_id, req.tool_name, req.origin, req.schema_hash, req.arguments_hash, approval_id
+    )
+    return {
+        "status": "approved",
+        "task_id": task_id,
+        "approval": record,
     }
 
 

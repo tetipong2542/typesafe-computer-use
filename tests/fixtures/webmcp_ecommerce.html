@@ -21,7 +21,7 @@
             <div>Cart Items: <span id="cart-count" class="badge">0</span></div>
         </div>
 
-        <div id="status-message" class="status-box">Status: Ready for WebMCP discovery</div>
+        <div id="status-message" class="status-box">Status: Initializing Native WebMCP</div>
 
         <div style="margin-top: 20px;">
             <h3>Products</h3>
@@ -52,11 +52,22 @@
         </div>
     </div>
 
-    <!-- Declarative form tool test -->
-    <form tool="subscribe_newsletter" description="Subscribe to email newsletter" style="display: none;">
-        <input type="email" name="email" placeholder="Your email" required>
-        <button type="submit">Subscribe</button>
-    </form>
+    <!-- Official Declarative WebMCP Form per W3C/Chrome Specification -->
+    <div class="card">
+        <h3>Newsletter Subscription (Declarative WebMCP Tool)</h3>
+        <form id="newsletter-form"
+              toolname="subscribe_newsletter"
+              tooldescription="Subscribe an email address to the newsletter"
+              toolautosubmit>
+            <input type="email"
+                   name="email"
+                   required
+                   toolparamdescription="Email address to subscribe"
+                   placeholder="Your email address">
+            <button type="submit">Subscribe</button>
+        </form>
+        <div id="newsletter-status" style="margin-top: 8px; font-weight: bold;">Newsletter: Not subscribed</div>
+    </div>
 
     <script>
         // State Store
@@ -66,158 +77,167 @@
             order: null
         };
 
-        // Initialize WebMCP Runtime Polyfill if needed
-        if (!document.modelContext) {
-            window.__webmcp_tools = new Map();
-            const et = new EventTarget();
-            document.modelContext = {
-                registerTool(def) {
-                    window.__webmcp_tools.set(def.name, def);
-                    et.dispatchEvent(new CustomEvent('toolchange', { detail: { action: 'register', name: def.name } }));
+        // Strict Native WebMCP Requirement: No polyfills allowed for Final Acceptance!
+        if (typeof document.modelContext === 'undefined') {
+            document.getElementById('status-message').innerText = 'ERROR: document.modelContext not available natively';
+            console.error('CRITICAL: Chrome native document.modelContext is undefined. Ensure Chrome flags are enabled.');
+        } else {
+            document.getElementById('status-message').innerText = 'Status: Ready for WebMCP discovery (Native)';
+
+            // 1. Tool: search_products (Read-Only)
+            document.modelContext.registerTool({
+                name: "search_products",
+                description: "Search the catalog of available products by keyword.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        query: { type: "string", description: "Search keyword" }
+                    },
+                    required: ["query"]
                 },
-                unregisterTool(name) {
-                    window.__webmcp_tools.delete(name);
-                    et.dispatchEvent(new CustomEvent('toolchange', { detail: { action: 'unregister', name: name } }));
+                readOnlyHint: true,
+                execute: async ({ query }) => {
+                    store.lastQuery = query;
+                    document.getElementById('status-message').innerText = `Status: Searched for '${query}'`;
+                    return { query, matches_found: 2, products: ["prod_macbook", "prod_keyboard"] };
+                }
+            });
+
+            // 2. Tool: add_to_cart (Mutating)
+            document.modelContext.registerTool({
+                name: "add_to_cart",
+                description: "Add a specified product and quantity to the user's shopping cart.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        product_id: { type: "string", description: "Product unique ID" },
+                        quantity: { type: "number", description: "Number of units to add", minimum: 1 }
+                    },
+                    required: ["product_id", "quantity"]
                 },
-                getTools() {
-                    return Array.from(window.__webmcp_tools.values());
+                consequentialHint: false,
+                execute: async ({ product_id, quantity }) => {
+                    const qty = Number(quantity) || 1;
+                    store.cart[product_id] = (store.cart[product_id] || 0) + qty;
+
+                    // Update DOM
+                    const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
+                    document.getElementById('cart-count').innerText = String(totalUnits);
+
+                    const cartUl = document.getElementById('cart-items');
+                    cartUl.innerHTML = '';
+                    for (const [id, count] of Object.entries(store.cart)) {
+                        const li = document.createElement('li');
+                        li.id = `cart-item-${id}`;
+                        li.innerText = `${id}: ${count} unit(s)`;
+                        cartUl.appendChild(li);
+                    }
+
+                    document.getElementById('status-message').innerText = `Status: Added ${qty} of ${product_id} to cart`;
+                    return { success: true, product_id, total_units: totalUnits, cart: store.cart };
+                }
+            });
+
+            // 3. Tool: update_quantity (Mutating)
+            document.modelContext.registerTool({
+                name: "update_quantity",
+                description: "Update quantity of a product currently in shopping cart.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        product_id: { type: "string", description: "Product unique ID" },
+                        quantity: { type: "number", description: "New absolute quantity", minimum: 0 }
+                    },
+                    required: ["product_id", "quantity"]
                 },
-                addEventListener: et.addEventListener.bind(et),
-                removeEventListener: et.removeEventListener.bind(et),
-                dispatchEvent: et.dispatchEvent.bind(et)
-            };
+                consequentialHint: false,
+                execute: async ({ product_id, quantity }) => {
+                    const qty = Number(quantity);
+                    if (qty <= 0) {
+                        delete store.cart[product_id];
+                    } else {
+                        store.cart[product_id] = qty;
+                    }
+
+                    const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
+                    document.getElementById('cart-count').innerText = String(totalUnits);
+
+                    const cartUl = document.getElementById('cart-items');
+                    cartUl.innerHTML = '';
+                    for (const [id, count] of Object.entries(store.cart)) {
+                        const li = document.createElement('li');
+                        li.id = `cart-item-${id}`;
+                        li.innerText = `${id}: ${count} unit(s)`;
+                        cartUl.appendChild(li);
+                    }
+
+                    document.getElementById('status-message').innerText = `Status: Updated ${product_id} quantity to ${qty}`;
+                    return { success: true, product_id, quantity: qty, cart: store.cart };
+                }
+            });
+
+            // 4. Tool: checkout (Consequential)
+            document.modelContext.registerTool({
+                name: "checkout",
+                description: "Finalize cart purchase and charge payment method. Irreversible financial action.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        shipping_address: { type: "string", description: "Delivery postal address" },
+                        payment_method: { type: "string", description: "Payment token or method, e.g. 'card_saved'" }
+                    },
+                    required: ["shipping_address", "payment_method"]
+                },
+                consequentialHint: true,
+                execute: async ({ shipping_address, payment_method }) => {
+                    const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
+                    if (totalUnits === 0) {
+                        throw new Error("Cannot checkout an empty cart");
+                    }
+
+                    const orderId = "ORD-" + Math.floor(100000 + Math.random() * 900000);
+                    store.order = { orderId, address: shipping_address, units: totalUnits };
+                    store.cart = {};
+
+                    document.getElementById('cart-count').innerText = "0";
+                    document.getElementById('cart-items').innerHTML = '<li>Order placed!</li>';
+                    document.getElementById('order-status').innerText = `Order Confirmed: ${orderId} shipped to ${shipping_address}`;
+                    document.getElementById('status-message').innerText = `Status: Checkout complete (${orderId})`;
+
+                    return {
+                        success: true,
+                        order_id: orderId,
+                        charged: true,
+                        shipping_address
+                    };
+                }
+            });
+
+            console.log("WebMCP E-Commerce tools registered successfully on native document.modelContext.");
         }
 
-        // 1. Tool: search_products (Read-Only)
-        document.modelContext.registerTool({
-            name: "search_products",
-            description: "Search the catalog of available products by keyword.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    query: { type: "string", description: "Search keyword" }
-                },
-                required: ["query"]
-            },
-            readOnlyHint: true,
-            execute: async ({ query }) => {
-                store.lastQuery = query;
-                document.getElementById('status-message').innerText = `Status: Searched for '${query}'`;
-                return { query, matches_found: 2, products: ["prod_macbook", "prod_keyboard"] };
-            }
-        });
+        // Handle declarative form submission with agentInvoked & respondWith support
+        const formEl = document.getElementById('newsletter-form');
+        if (formEl) {
+            formEl.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const emailInput = formEl.elements['email'];
+                const email = emailInput ? emailInput.value : '';
+                const isAgent = Boolean(e.agentInvoked);
+                document.getElementById('newsletter-status').innerText = `Newsletter: Subscribed ${email} (agent=${isAgent})`;
 
-        // 2. Tool: add_to_cart (Mutating)
-        document.modelContext.registerTool({
-            name: "add_to_cart",
-            description: "Add a specified product and quantity to the user's shopping cart.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    product_id: { type: "string", description: "Product unique ID" },
-                    quantity: { type: "number", description: "Number of units to add", minimum: 1 }
-                },
-                required: ["product_id", "quantity"]
-            },
-            consequentialHint: false,
-            execute: async ({ product_id, quantity }) => {
-                const qty = Number(quantity) || 1;
-                store.cart[product_id] = (store.cart[product_id] || 0) + qty;
-
-                // Update DOM
-                const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
-                document.getElementById('cart-count').innerText = String(totalUnits);
-
-                const cartUl = document.getElementById('cart-items');
-                cartUl.innerHTML = '';
-                for (const [id, count] of Object.entries(store.cart)) {
-                    const li = document.createElement('li');
-                    li.id = `cart-item-${id}`;
-                    li.innerText = `${id}: ${count} unit(s)`;
-                    cartUl.appendChild(li);
-                }
-
-                document.getElementById('status-message').innerText = `Status: Added ${qty} of ${product_id} to cart`;
-                return { success: true, product_id, total_units: totalUnits, cart: store.cart };
-            }
-        });
-
-        // 3. Tool: update_quantity (Mutating)
-        document.modelContext.registerTool({
-            name: "update_quantity",
-            description: "Update quantity of a product currently in shopping cart.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    product_id: { type: "string", description: "Product unique ID" },
-                    quantity: { type: "number", description: "New absolute quantity", minimum: 0 }
-                },
-                required: ["product_id", "quantity"]
-            },
-            consequentialHint: false,
-            execute: async ({ product_id, quantity }) => {
-                const qty = Number(quantity);
-                if (qty <= 0) {
-                    delete store.cart[product_id];
-                } else {
-                    store.cart[product_id] = qty;
-                }
-
-                const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
-                document.getElementById('cart-count').innerText = String(totalUnits);
-
-                const cartUl = document.getElementById('cart-items');
-                cartUl.innerHTML = '';
-                for (const [id, count] of Object.entries(store.cart)) {
-                    const li = document.createElement('li');
-                    li.id = `cart-item-${id}`;
-                    li.innerText = `${id}: ${count} unit(s)`;
-                    cartUl.appendChild(li);
-                }
-
-                document.getElementById('status-message').innerText = `Status: Updated ${product_id} quantity to ${qty}`;
-                return { success: true, product_id, quantity: qty, cart: store.cart };
-            }
-        });
-
-        // 4. Tool: checkout (Consequential)
-        document.modelContext.registerTool({
-            name: "checkout",
-            description: "Finalize cart purchase and charge payment method. Irreversible financial action.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    shipping_address: { type: "string", description: "Delivery postal address" },
-                    payment_method: { type: "string", description: "Payment token or method, e.g. 'card_saved'" }
-                },
-                required: ["shipping_address", "payment_method"]
-            },
-            consequentialHint: true,
-            execute: async ({ shipping_address, payment_method }) => {
-                const totalUnits = Object.values(store.cart).reduce((a, b) => a + b, 0);
-                if (totalUnits === 0) {
-                    throw new Error("Cannot checkout an empty cart");
-                }
-
-                const orderId = "ORD-" + Math.floor(100000 + Math.random() * 900000);
-                store.order = { orderId, address: shipping_address, units: totalUnits };
-                store.cart = {};
-
-                document.getElementById('cart-count').innerText = "0";
-                document.getElementById('cart-items').innerHTML = '<li>Order placed!</li>';
-                document.getElementById('order-status').innerText = `Order Confirmed: ${orderId} shipped to ${shipping_address}`;
-                document.getElementById('status-message').innerText = `Status: Checkout complete (${orderId})`;
-
-                return {
+                const responseData = {
                     success: true,
-                    order_id: orderId,
-                    charged: true,
-                    shipping_address
+                    tool: "subscribe_newsletter",
+                    email: email,
+                    agent_invoked: isAgent,
                 };
-            }
-        });
 
-        console.log("WebMCP E-Commerce tools registered successfully.");
+                if (typeof e.respondWith === 'function') {
+                    e.respondWith(Promise.resolve(responseData));
+                }
+            });
+        }
     </script>
 </body>
 </html>

@@ -113,6 +113,9 @@ class WorkerDatabase:
                 ("origin", "TEXT"),
                 ("side_effect_state", "TEXT DEFAULT 'not_started'"),
                 ("duration_ms", "REAL"),
+                ("confidence", "REAL"),
+                ("cost_usd", "REAL"),
+                ("tokens", "INTEGER"),
                 ("input_tokens", "INTEGER DEFAULT 0"),
                 ("output_tokens", "INTEGER DEFAULT 0"),
                 ("estimated_cost", "REAL DEFAULT 0.0"),
@@ -130,7 +133,23 @@ class WorkerDatabase:
                 if col_name not in existing_cols:
                     conn.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type};")
 
-            conn.execute("PRAGMA user_version = 3;")
+            # Migration for approvals table to support WebMCP server-side security records
+            existing_appr_cols = {col["name"] for col in conn.execute("PRAGMA table_info(approvals);").fetchall()}
+            new_appr_cols = [
+                ("origin", "TEXT"),
+                ("tool_name", "TEXT"),
+                ("schema_hash", "TEXT"),
+                ("arguments_hash", "TEXT"),
+                ("navigation_epoch", "INTEGER DEFAULT 0"),
+                ("single_use", "INTEGER DEFAULT 1"),
+                ("approved_by", "TEXT DEFAULT 'operator'"),
+                ("used", "INTEGER DEFAULT 0"),
+            ]
+            for col_name, col_def in new_appr_cols:
+                if col_name not in existing_appr_cols:
+                    conn.execute(f"ALTER TABLE approvals ADD COLUMN {col_name} {col_def};")
+
+            conn.execute("PRAGMA user_version = 4;")
             conn.commit()
 
     def get_schema_version(self) -> int:
@@ -459,6 +478,132 @@ class WorkerDatabase:
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def create_webmcp_approval(
+        self,
+        approval_id: str,
+        task_id: str,
+        event_id: str,
+        origin: str,
+        tool_name: str,
+        schema_hash: str,
+        arguments_hash: str,
+        navigation_epoch: int,
+        ttl_seconds: float = 300.0,
+        single_use: bool = True,
+        approved_by: str = "operator",
+    ) -> dict[str, Any]:
+        """Create a cryptographically hashed server-side approval record for a consequential WebMCP tool."""
+        now = time.time()
+        expires_at = now + ttl_seconds
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO approvals (
+                    approval_id, task_id, event_id, step, action, target,
+                    screenshot_hash, action_fingerprint, expires_at, created_at,
+                    origin, tool_name, schema_hash, arguments_hash,
+                    navigation_epoch, single_use, approved_by, used
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    approval_id,
+                    task_id,
+                    event_id,
+                    0,
+                    tool_name,
+                    tool_name,
+                    "",
+                    "",
+                    expires_at,
+                    now,
+                    origin,
+                    tool_name,
+                    schema_hash,
+                    arguments_hash,
+                    navigation_epoch,
+                    1 if single_use else 0,
+                    approved_by,
+                    0,
+                ),
+            )
+            conn.commit()
+        return {
+            "approval_id": approval_id,
+            "task_id": task_id,
+            "event_id": event_id,
+            "origin": origin,
+            "tool_name": tool_name,
+            "schema_hash": schema_hash,
+            "arguments_hash": arguments_hash,
+            "navigation_epoch": navigation_epoch,
+            "expires_at": expires_at,
+            "single_use": single_use,
+            "approved_by": approved_by,
+        }
+
+    def get_active_webmcp_approval(
+        self,
+        origin: str,
+        tool_name: str,
+        schema_hash: str,
+        arguments_hash: str,
+        navigation_epoch: int,
+        task_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Query for an active, unexpired, unconsumed approval record matching all security fields."""
+        now = time.time()
+        query = """
+            SELECT * FROM approvals
+            WHERE origin = ?
+              AND tool_name = ?
+              AND schema_hash = ?
+              AND arguments_hash = ?
+              AND navigation_epoch = ?
+              AND (used = 0 OR used IS NULL)
+              AND consumed_at IS NULL
+              AND expires_at > ?
+        """
+        params: list[Any] = [origin, tool_name, schema_hash, arguments_hash, navigation_epoch, now]
+        if task_id:
+            query += " AND task_id = ?"
+            params.append(task_id)
+        query += " ORDER BY id DESC LIMIT 1"
+
+        with self._get_connection() as conn:
+            row = conn.execute(query, tuple(params)).fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    def consume_webmcp_approval(self, approval_id: str) -> bool:
+        """Mark a WebMCP approval as consumed/used."""
+        now = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE approvals SET used = 1, consumed_at = ? WHERE approval_id = ? AND (used = 0 OR used IS NULL) AND consumed_at IS NULL",
+                (now, approval_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def revoke_all_approvals(self, task_id: str | None = None) -> int:
+        """Revoke all pending approvals (e.g., upon emergency stop, takeover, or epoch change)."""
+        now = time.time()
+        with self._get_connection() as conn:
+            if task_id:
+                cursor = conn.execute(
+                    "UPDATE approvals SET consumed_at = ? WHERE task_id = ? AND consumed_at IS NULL",
+                    (now, task_id),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE approvals SET consumed_at = ? WHERE consumed_at IS NULL",
+                    (now,),
+                )
+            conn.commit()
+            return cursor.rowcount
+
 
     def check_and_restore_input_lock(self) -> bool:
         """Check if any task was emergency_stopped (un-reset) or in takeover before reboot.
