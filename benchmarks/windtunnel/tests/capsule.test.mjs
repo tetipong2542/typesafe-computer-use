@@ -25,7 +25,15 @@ test("capsule prepares, boots, waits, resets, observes, and downs once", async (
   });
 
   assert.equal(capsule.baseUrl, "http://localhost:4444");
-  assert.deepEqual(capsule.meta, { siteId: "example", seed: 7, versions: { app: "abc" } });
+  assert.deepEqual(capsule.meta, {
+    siteId: "example",
+    seed: 7,
+    port: 4444,
+    runId: "wt-4444",
+    webmcp: false,
+    golden_applied: false,
+    versions: { app: "abc" },
+  });
   await capsule.reset();
   assert.deepEqual(await capsule.observe("api", { query: "items" }), { probe: "api", query: "items" });
   await capsule.down();

@@ -70,6 +70,78 @@ async function hasNativeWebMCP(page) {
 }
 
 /**
+ * Wait for native tools to register and stabilize.
+ * Next.js dev server compiles routes on first request and React useEffect registers tools asynchronously.
+ * Polls document.modelContext.getTools() until count > 0 and stable across 2 consecutive checks, or timeout.
+ * @param {import("playwright").Page} page
+ * @param {object} [options]
+ * @param {number} [options.timeout]
+ * @param {number} [options.pollInterval=250]
+ * @returns {Promise<{ waitMs: number, timedOut: boolean, toolCount: number }>}
+ */
+async function waitForNativeTools(page, { timeout, pollInterval = 250 } = {}) {
+  const start = performance.now();
+  if (!page || typeof page.evaluate !== "function") {
+    return { waitMs: 0, timedOut: false, toolCount: 0 };
+  }
+
+  const effectiveTimeout = timeout ?? (typeof page.waitForLoadState === "function" ? 15000 : 50);
+
+  // Pre-condition: give network idle a brief window to settle initial bundles
+  try {
+    if (typeof page.waitForLoadState === "function") {
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+    }
+  } catch {}
+
+  let prevCount = -1;
+  let consecutiveMatches = 0;
+  let lastCount = 0;
+
+  while (performance.now() - start < effectiveTimeout) {
+    let count = 0;
+    try {
+      const raw = await page.evaluate(async () => {
+        if (!document?.modelContext?.getTools) return 0;
+        const tools = await document.modelContext.getTools();
+        return Array.isArray(tools) ? tools.length : 0;
+      });
+      count = Array.isArray(raw) ? raw.length : (typeof raw === "number" ? raw : 0);
+    } catch {
+      count = 0;
+    }
+
+    lastCount = count;
+    if (count > 0) {
+      if (count === prevCount) {
+        consecutiveMatches++;
+        if (consecutiveMatches >= 1) {
+          return {
+            waitMs: Math.round(performance.now() - start),
+            timedOut: false,
+            toolCount: count,
+          };
+        }
+      } else {
+        prevCount = count;
+        consecutiveMatches = 0;
+      }
+    }
+
+    const elapsed = performance.now() - start;
+    if (elapsed >= effectiveTimeout) break;
+    const sleepDuration = Math.min(pollInterval, Math.max(10, Math.round(effectiveTimeout - elapsed)));
+    await new Promise((resolve) => setTimeout(resolve, sleepDuration));
+  }
+
+  return {
+    waitMs: Math.round(performance.now() - start),
+    timedOut: true,
+    toolCount: lastCount,
+  };
+}
+
+/**
  * Discovers tools declared natively on the page via Chrome Blink C++ WebMCP.
  * @param {import("playwright").Page} page
  * @returns {Promise<Array<{name: string, description: string, input_schema: any}>>}
@@ -260,8 +332,19 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
     });
   }
 
+  // Wait for native tools to register & stabilize (handles Next.js React hydration race)
+  const waitDiag = await waitForNativeTools(page, {
+    timeout: driverOptions.toolsWaitTimeout,
+  });
+
   // Discover native tools
   const tools = await discoverNativeTools(page);
+  transcript.push({
+    action: "wait_tools",
+    tools_wait_ms: waitDiag.waitMs,
+    tools_wait_timed_out: waitDiag.timedOut,
+    tools_stabilized_count: waitDiag.toolCount,
+  });
   transcript.push({
     action: "discovery",
     toolCount: tools.length,
@@ -283,6 +366,9 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
         executed_mode: null,
         webmcp_implementation: "native",
         visual_invocation_count: 0,
+        tools_wait_ms: waitDiag.waitMs,
+        tools_wait_timed_out: waitDiag.timedOut,
+        tools_discovered: 0,
       },
     });
   }
@@ -360,6 +446,9 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
         executed_mode: "webmcp",
         webmcp_implementation: "native",
         visual_invocation_count: 0,
+        tools_wait_ms: waitDiag.waitMs,
+        tools_wait_timed_out: waitDiag.timedOut,
+        tools_discovered: tools.length,
         accounting: acct,
       },
     });
@@ -393,6 +482,9 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
           executed_mode: null,
           webmcp_implementation: "native",
           visual_invocation_count: 0,
+          tools_wait_ms: waitDiag.waitMs,
+          tools_wait_timed_out: waitDiag.timedOut,
+          tools_discovered: tools.length,
         },
       });
     }
@@ -418,6 +510,9 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
       executed_mode: "webmcp",
       webmcp_implementation: "native",
       visual_invocation_count: 0,
+      tools_wait_ms: waitDiag.waitMs,
+      tools_wait_timed_out: waitDiag.timedOut,
+      tools_discovered: tools.length,
     },
   });
 }
@@ -861,15 +956,22 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
   let fallbackFrom = null;
   let fallbackTo = null;
   let fallbackReason = null;
+  let waitDiag = { waitMs: 0, timedOut: false, toolCount: 0 };
+  let tools = [];
 
   if (nativeAvailable) {
-    const tools = await discoverNativeTools(page);
+    waitDiag = await waitForNativeTools(page, {
+      timeout: driverOptions.toolsWaitTimeout,
+    });
+    tools = await discoverNativeTools(page);
     if (tools.length > 0) {
       transcript.push({
         action: "probe",
         selected_mode: "webmcp",
         executed_mode: "webmcp",
         webmcp_implementation: "native",
+        tools_wait_ms: waitDiag.waitMs,
+        tools_wait_timed_out: waitDiag.timedOut,
         tools_discovered: tools.length,
       });
 
@@ -883,6 +985,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
               ...res.telemetry,
               selected_mode: "webmcp",
               executed_mode: "webmcp",
+              tools_wait_ms: waitDiag.waitMs,
+              tools_wait_timed_out: waitDiag.timedOut,
+              tools_discovered: tools.length,
               fallback_from: null,
               fallback_to: null,
               fallback_reason: null,
@@ -900,6 +1005,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
               ...res.telemetry,
               halt_reason: "SideEffectState.UNKNOWN",
               fallback_blocked: true,
+              tools_wait_ms: waitDiag.waitMs,
+              tools_wait_timed_out: waitDiag.timedOut,
+              tools_discovered: tools.length,
             },
           };
         }
@@ -920,6 +1028,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
               executed_mode: null,
               halt_reason: "SideEffectState.UNKNOWN",
               fallback_blocked: true,
+              tools_wait_ms: waitDiag.waitMs,
+              tools_wait_timed_out: waitDiag.timedOut,
+              tools_discovered: tools.length,
             },
           });
         }
@@ -930,7 +1041,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
     } else {
       fallbackFrom = "webmcp";
       fallbackTo = "browser_dom";
-      fallbackReason = "WebMCP supported but no tools registered on page";
+      fallbackReason = waitDiag.timedOut
+        ? `WebMCP tools registration timed out after ${waitDiag.waitMs}ms`
+        : "WebMCP supported but no tools registered on page";
     }
   } else {
     fallbackFrom = "webmcp";
@@ -947,6 +1060,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
     fallback_from: fallbackFrom,
     fallback_to: fallbackTo,
     reason: fallbackReason,
+    tools_wait_ms: waitDiag.waitMs,
+    tools_wait_timed_out: waitDiag.timedOut,
+    tools_discovered: tools.length,
   });
 
   // Attempt Tier 2: Browser DOM
@@ -964,6 +1080,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
           fallback_from: fallbackFrom,
           fallback_to: fallbackTo,
           fallback_reason: fallbackReason,
+          tools_wait_ms: waitDiag.waitMs,
+          tools_wait_timed_out: waitDiag.timedOut,
+          tools_discovered: tools.length,
         },
       };
     }
@@ -977,6 +1096,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
           ...domRes.telemetry,
           halt_reason: "SideEffectState.UNKNOWN",
           fallback_blocked: true,
+          tools_wait_ms: waitDiag.waitMs,
+          tools_wait_timed_out: waitDiag.timedOut,
+          tools_discovered: tools.length,
         },
       };
     }
@@ -994,6 +1116,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
       fallback_from: secondFallbackFrom,
       fallback_to: secondFallbackTo,
       reason: secondReason,
+      tools_wait_ms: waitDiag.waitMs,
+      tools_wait_timed_out: waitDiag.timedOut,
+      tools_discovered: tools.length,
     });
 
     const visualRes = await runVisual({ task, capsule, page, model, driverOptions });
@@ -1008,6 +1133,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
         fallback_from: secondFallbackFrom,
         fallback_to: secondFallbackTo,
         fallback_reason: secondReason,
+        tools_wait_ms: waitDiag.waitMs,
+        tools_wait_timed_out: waitDiag.timedOut,
+        tools_discovered: tools.length,
       },
     };
   } catch (err) {
@@ -1023,6 +1151,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
           executed_mode: null,
           halt_reason: "SideEffectState.UNKNOWN",
           fallback_blocked: true,
+          tools_wait_ms: waitDiag.waitMs,
+          tools_wait_timed_out: waitDiag.timedOut,
+          tools_discovered: tools.length,
         },
       });
     }
@@ -1039,6 +1170,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
         fallback_from: "browser_dom",
         fallback_to: "visual_grounded",
         fallback_reason: err.message,
+        tools_wait_ms: waitDiag.waitMs,
+        tools_wait_timed_out: waitDiag.timedOut,
+        tools_discovered: tools.length,
       },
     };
   }

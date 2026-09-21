@@ -364,5 +364,44 @@ test("ts-webmcp-native fails when tool list is empty on page", async () => {
   assert.equal(res.telemetry.selected_mode, "webmcp");
   assert.equal(res.telemetry.executed_mode, null);
   assert.equal(res.telemetry.webmcp_implementation, "native");
+  assert.equal(res.telemetry.tools_wait_timed_out, true);
+  assert.equal(res.telemetry.tools_discovered, 0);
+});
+
+test("ts-webmcp-native waits for tools to stabilize and records diagnostics", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  let evaluateCount = 0;
+  const page = {
+    async goto() {},
+    async evaluate(fn, arg) {
+      if (arg && arg.name) {
+        return "Tool executed";
+      }
+      const fnStr = fn ? fn.toString() : "";
+      if (fnStr.includes("modelContext") && !fnStr.includes("getTools")) {
+        return true;
+      }
+      if (fnStr.includes("getTools")) {
+        evaluateCount++;
+        // First check returns 0 tools (simulating Next.js React pre-hydration)
+        // Subsequent checks return 1 tool (simulating post-hydration stabilization)
+        if (evaluateCount === 1) return [];
+        return [{ name: "search_tool", description: "Search", input_schema: {} }];
+      }
+      return null;
+    },
+  };
+  const task = { id: "directory-search", tool_name: "search_tool" };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runWebMCPNative({ task, capsule, page, driverOptions: { toolsWaitTimeout: 500 } });
+  assert.equal(res.failure, null);
+  assert.equal(res.telemetry.tools_wait_timed_out, false);
+  assert.equal(res.telemetry.tools_discovered, 1);
+  assert.equal(typeof res.telemetry.tools_wait_ms, "number");
+  const waitEntry = res.transcript.find((e) => e.action === "wait_tools");
+  assert.ok(waitEntry);
+  assert.equal(waitEntry.tools_wait_timed_out, false);
+  assert.equal(waitEntry.tools_stabilized_count, 1);
 });
 

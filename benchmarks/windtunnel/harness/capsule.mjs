@@ -133,12 +133,29 @@ export async function bootCapsule(siteId, {
       if (Date.now() >= deadline) throw new Error(`timed out waiting for ${siteId} to become healthy`);
       await wait(pollMs);
     }
+    let goldenApplied = false;
+    try {
+      const uid = process.getuid ? process.getuid() : 501;
+      const stateFile = path.join("/tmp", `webmcp-kit-capsules-${uid}`, siteId, context.runId, "private/state.env");
+      if (fs.existsSync(stateFile)) {
+        const content = fs.readFileSync(stateFile, "utf8");
+        goldenApplied = content.includes("webmcp:golden");
+      }
+    } catch {}
     return {
       baseUrl: started.baseUrl ?? `http://localhost:${port}`,
       reset: () => step("reset"),
       observe: (probe, args = {}) => (observe ?? lifecycle.observe)?.(probe, args, context),
       down,
-      meta: { siteId, seed, versions: started.versions ?? {} },
+      meta: {
+        siteId,
+        seed,
+        port,
+        runId: context.runId,
+        webmcp: env.WT_WEBMCP === "1",
+        golden_applied: goldenApplied,
+        versions: started.versions ?? {},
+      },
     };
   } catch (error) {
     // Teardown must not mask the boot error, and must not hang either.
