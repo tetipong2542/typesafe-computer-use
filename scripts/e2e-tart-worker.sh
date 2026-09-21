@@ -72,6 +72,15 @@ SSH_KEY="${HOME}/.ssh/id_ed25519_tart"
 SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
 SSH_CMD="ssh ${SSH_OPTS} admin@${VM_IP}"
 
+# Dynamically resolve guest-local token if not passed in host environment
+if [[ -z "${WORKER_AUTH_TOKEN:-}" ]]; then
+    GUEST_TOKEN=$(${SSH_CMD} "grep WORKER_AUTH_TOKEN ~/typesafe-computer-use/.env 2>/dev/null | cut -d= -f2 | tr -d '\"'" || true)
+    if [[ -n "${GUEST_TOKEN}" ]]; then
+        AUTH_TOKEN="${GUEST_TOKEN}"
+        AUTH_HEADER="Authorization: Bearer ${AUTH_TOKEN}"
+    fi
+fi
+
 # 3. SSH Connectivity & Guest Environment
 echo "[3/9] Testing SSH connectivity and system metadata..."
 ssh-keyscan -H "${VM_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
@@ -113,10 +122,9 @@ done
 
 if [[ "${WORKER_ONLINE}" != "true" ]]; then
     echo "Worker API not yet responding on guest port ${WORKER_PORT}."
-    echo "Attempting to launch worker daemon in guest session..."
+    echo "Attempting to restart worker daemon via LaunchAgent in guest session..."
     ${SSH_CMD} "
-        cd /Users/admin/typesafe-computer-use 2>/dev/null || cd /Users/admin
-        WORKER_AUTH_TOKEN='${AUTH_TOKEN}' nohup .venv/bin/python3 -m typesafe_computer_use.worker.server --host 0.0.0.0 --port ${WORKER_PORT} > /tmp/worker.log 2>&1 &
+        launchctl kickstart -k \"gui/\$(id -u)/com.typesafe.worker\"
     "
     sleep 5
     if ! curl -s -f "http://${VM_IP}:${WORKER_PORT}/healthz" >/dev/null 2>&1; then
@@ -125,6 +133,7 @@ if [[ "${WORKER_ONLINE}" != "true" ]]; then
     fi
     echo "Worker API daemon successfully launched and verified."
 fi
+
 
 # 6. CDP Loopback Binding Verification
 echo "[6/9] Verifying CDP loopback binding inside Guest (strictly 127.0.0.1)..."

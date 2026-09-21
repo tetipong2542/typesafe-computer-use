@@ -66,6 +66,24 @@ if [[ -e "${ENV_FILE}" ]]; then
                 TYPESAFE_INPUT_LOCK_PATH)
                     export TYPESAFE_INPUT_LOCK_PATH="$val"
                     ;;
+                TYPESAFE_API_KEY)
+                    export TYPESAFE_API_KEY="$val"
+                    ;;
+                CLICKER_BROWSER)
+                    export CLICKER_BROWSER="$val"
+                    ;;
+                OPENAI_API_KEY)
+                    export OPENAI_API_KEY="$val"
+                    ;;
+                OPENAI_BASE_URL)
+                    export OPENAI_BASE_URL="$val"
+                    ;;
+                CLICKER_WRITER_MODEL)
+                    export CLICKER_WRITER_MODEL="$val"
+                    ;;
+                CLICKER_ANSWER_MODEL)
+                    export CLICKER_ANSWER_MODEL="$val"
+                    ;;
                 *)
                     # Ignore non-allowlisted configuration keys
                     ;;
