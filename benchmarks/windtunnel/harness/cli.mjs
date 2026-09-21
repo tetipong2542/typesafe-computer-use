@@ -35,11 +35,11 @@ const PRESETS = { smoke: { n: 1 }, lite: { n: 3 }, full: { n: 3 } };
 const ARMS = {
   scripted: { id: "scripted", run: runScripted, model: "none", paid: false },
   // TypeSafe Computer Use Arms
-  "ts-webmcp-native": { id: "ts-webmcp-native", run: runTSWebMCPNative, model: "none", version: TYPESAFE_VERSION, paid: false, webmcp: true },
-  "ts-browser-dom": { id: "ts-browser-dom", run: runTSBrowserDOM, model: "none", version: TYPESAFE_VERSION, paid: false },
-  "ts-visual": { id: "ts-visual", run: runTSVisual, model: "none", version: TYPESAFE_VERSION, paid: false },
-  "ts-hybrid-auto": { id: "ts-hybrid-auto", run: runTSHybridAuto, model: "none", version: TYPESAFE_VERSION, paid: false, webmcp: true },
-  "ts-webmcp-compat": { id: "ts-webmcp-compat", run: runTSWebMCPCompat, model: "none", version: TYPESAFE_VERSION, paid: false, webmcp: true },
+  "ts-webmcp-native": { id: "ts-webmcp-native", run: runTSWebMCPNative, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-browser-dom": { id: "ts-browser-dom", run: runTSBrowserDOM, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-visual": { id: "ts-visual", run: runTSVisual, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-hybrid-auto": { id: "ts-hybrid-auto", run: runTSHybridAuto, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-webmcp-compat": { id: "ts-webmcp-compat", run: runTSWebMCPCompat, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
   // Standard WindTunnel Baseline Arms
   "cu-claude": { id: "cu-claude", run: runCUClaude, model: "claude-sonnet-4-6", version: CU_CLAUDE_VERSION, key: "ANTHROPIC_API_KEY", paid: true },
   "cu-openai": { id: "cu-openai", run: runCUOpenAI, model: "gpt-5.5", version: CU_OPENAI_VERSION, key: "OPENAI_API_KEY", paid: true },
