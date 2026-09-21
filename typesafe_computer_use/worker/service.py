@@ -397,6 +397,8 @@ class WorkerService:
             controller.request_reset()
         else:
             macos.set_input_lock(False)
+        self.db.update_task(task_id, outcome="Reset")
+        ExecutionGate.get_instance().open_gate()
         return True, "Emergency lock reset. Synthetic input unlocked."
 
     def stop_task(self, task_id: str) -> bool:
