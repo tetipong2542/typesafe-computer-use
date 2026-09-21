@@ -196,6 +196,7 @@ capsule_restore_directory_snapshot() {
   rm -rf "$temporary"
   mkdir -p "$temporary"
   tar -xf "$archive" -C "$temporary"
+  chmod -R a+rwX "$temporary"
   rm -rf "$target"
   mv "$temporary" "$target"
 }

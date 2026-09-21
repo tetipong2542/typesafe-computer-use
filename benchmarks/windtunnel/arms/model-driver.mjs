@@ -167,6 +167,9 @@ export class ModelDriver {
       totalLatencyMs: this.totalLatencyMs,
       usage: { ...this.cumulativeUsage },
       costUsd: this.totalCostUsd,
+      actualCostUsd: this.totalCostUsd,
+      nominalCostUsd: this.totalCostUsd,
+      imageTokenHeuristic: "800 tokens per 1280x800 screenshot",
       budgetExhausted: this.checkBudget(),
       turnsHistory: this.turnsHistory,
     };
@@ -296,11 +299,36 @@ export class FakeModelDriver extends ModelDriver {
 
     // 4. Default DOM / Text turn
     if (promptText.includes("filter")) {
+      if (this.turnIndex === 1) {
+        return {
+          type: "dom_action",
+          action: "click",
+          selector: 'a[href*="development"], button:has-text("Development")',
+          finalText: "",
+          toolCalls: [{ id: "call_dom_1", name: "click", selector: 'a[href*="development"]' }],
+        };
+      }
       return {
-        type: "dom_action",
-        action: "click",
-        selector: "text=Developer Tools",
+        type: "final_answer",
         finalText: "Final answer: GitHub",
+        toolCalls: [],
+      };
+    }
+
+    if (promptText.includes("search") || promptText.includes("design")) {
+      if (this.turnIndex === 1) {
+        return {
+          type: "dom_action",
+          action: "fill",
+          selector: 'input[type="search"]',
+          value: "design",
+          finalText: "",
+          toolCalls: [{ id: "call_dom_1", name: "fill", selector: 'input[type="search"]', value: "design" }],
+        };
+      }
+      return {
+        type: "final_answer",
+        finalText: "Final answer: Figma",
         toolCalls: [],
       };
     }
@@ -527,6 +555,7 @@ export class OpenAICodexModelDriver extends ModelDriver {
       nominalCostUsd: this.totalCostUsd,
       billingType: this.isCodex ? "chatgpt_plus_codex" : "pay_per_token_api",
       endpoint: this.baseUrl,
+      imageTokenHeuristic: "800 tokens per 1280x800 screenshot",
     };
   }
 }

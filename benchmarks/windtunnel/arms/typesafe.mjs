@@ -156,6 +156,7 @@ function buildResult({
   model = DEFAULT_ARM_MODEL,
   usage = { input_tokens: 0, output_tokens: 0 },
   cost = 0.0,
+  cost_nominal = 0.0,
   model_snapshot = "typesafe-local",
   budget_exhausted = false,
   telemetry = {},
@@ -165,6 +166,8 @@ function buildResult({
     usage,
     transcript,
     cost,
+    cost_nominal,
+    cost_estimated: "chatgpt_plus_codex (actual: $0.00)",
     turns,
     setupMs,
     failure,
@@ -174,7 +177,12 @@ function buildResult({
     temperature: 0.0,
     effort: "provider-default",
     caching: "unsupported",
-    telemetry,
+    telemetry: {
+      ...telemetry,
+      actual_cost_usd: cost,
+      nominal_list_price_usd: cost_nominal,
+      image_token_heuristic: "800 tokens per 1280x800 screenshot",
+    },
   };
 }
 
@@ -344,6 +352,7 @@ export async function runWebMCPNative({ task, capsule, page, model = "none", dri
       model,
       usage: acct.usage,
       cost: acct.actualCostUsd,
+      cost_nominal: acct.nominalCostUsd || acct.costUsd || 0.0,
       model_snapshot: acct.modelSnapshot,
       budget_exhausted: acct.budgetExhausted,
       telemetry: {
@@ -436,24 +445,78 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     const driver = driverOptions.driverInstance || createModelDriver({ armId, model, maxTurns: 5, ...driverOptions });
-    const messages = [];
     let finalText = "";
     let failure = null;
+    let executedActions = 0;
+
+    const domTools = [
+      {
+        name: "click",
+        description: "Click an interactive element on the page using a CSS selector or text locator (e.g. 'a:has-text(\"Development\")' or 'button:has-text(\"Development\")')",
+        input_schema: {
+          type: "object",
+          properties: {
+            selector: { type: "string", description: "CSS selector or Playwright text locator" },
+          },
+          required: ["selector"],
+        },
+      },
+      {
+        name: "fill",
+        description: "Fill a text input field on the page",
+        input_schema: {
+          type: "object",
+          properties: {
+            selector: { type: "string", description: "Input element CSS selector" },
+            value: { type: "string", description: "Text value to fill" },
+          },
+          required: ["selector", "value"],
+        },
+      },
+      {
+        name: "press",
+        description: "Press a keyboard key on an element (e.g. 'Enter')",
+        input_schema: {
+          type: "object",
+          properties: {
+            selector: { type: "string", description: "Target selector" },
+            key: { type: "string", description: "Key name to press (e.g. 'Enter')" },
+          },
+          required: ["selector", "key"],
+        },
+      },
+    ];
+
+    // Collect interactive elements to give model clear grounding targets
+    const interactiveSummary = await page.evaluate(() => {
+      const items = [];
+      const els = document.querySelectorAll('button, a, input, select, [role="button"]');
+      for (const el of els) {
+        const text = (el.innerText || el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.value || "").trim().replace(/\s+/g, " ");
+        const href = el.getAttribute("href") || "";
+        const type = el.getAttribute("type") || "";
+        if (text || el.tagName.toLowerCase() === "input") {
+          items.push({
+            tag: el.tagName.toLowerCase(),
+            text: text.slice(0, 40),
+            href: href.slice(0, 40),
+            type,
+          });
+        }
+      }
+      return items.slice(0, 25);
+    }).catch(() => []);
+
+    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nInteractive elements on page:\n${JSON.stringify(interactiveSummary, null, 2)}\n\nYou MUST first execute the requested action (e.g. clicking the category filter button or filling the search box) using the provided tools before stating the final answer.`;
+    const messages = [{ role: "user", content: initialPrompt }];
 
     while (driver.turnIndex < driver.maxTurns) {
-      const pageText = await page.locator("body").innerText().catch(() => "");
-      const domSummary = pageText.slice(0, 3000);
-      const turnPrompt = driver.turnIndex === 0
-        ? `${task.prompt || `Perform task: ${task.id}`}\n\nPage text content:\n${domSummary}\n\nProvide the requested answer clearly beginning with 'Final answer:'.`
-        : `Updated page text content:\n${domSummary}\n\nProvide the requested answer clearly beginning with 'Final answer:'.`;
-
-      messages.push({ role: "user", content: turnPrompt });
-
       let turnRes;
       try {
         turnRes = await driver.createTurn({
-          system: "You operate a web browser by inspecting text on the webpage. Always state your final answer plainly beginning with 'Final answer:'.",
+          system: "You operate a web browser through structured DOM element interactions. You MUST first perform the requested action (clicking filters or filling search inputs) using tools before stating your final answer. Only after taking actions and verifying the result, conclude with 'Final answer:'.",
           messages,
+          tools: domTools,
         });
       } catch (e) {
         failure = e.isRateLimit ? "rate_limit_429" : e.message;
@@ -467,18 +530,53 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
         break;
       }
 
-      if (turnRes.type === "dom_action" && turnRes.action) {
-        if (turnRes.action === "click" && turnRes.selector) {
-          await page.locator(turnRes.selector).click();
-          transcript.push({ action: "click", selector: turnRes.selector, mode: "browser_dom" });
-        } else if (turnRes.action === "fill" && turnRes.selector) {
-          await page.locator(turnRes.selector).fill(turnRes.value || "");
-          transcript.push({ action: "fill", selector: turnRes.selector, value: turnRes.value, mode: "browser_dom" });
-        }
-      }
+      // Handle tool calls or dom_action
+      const calls = turnRes.toolCalls && turnRes.toolCalls.length > 0
+        ? turnRes.toolCalls
+        : (turnRes.type === "dom_action" && turnRes.action
+          ? [{ name: turnRes.action, arguments: { selector: turnRes.selector, value: turnRes.value, key: turnRes.key } }]
+          : []);
 
-      finalText = turnRes.finalText || "";
-      if (finalText) break;
+      if (calls.length > 0) {
+        for (const call of calls) {
+          const args = call.arguments || {};
+          try {
+            if (call.name === "click" && args.selector) {
+              await page.locator(args.selector).first().click({ timeout: 5000 });
+              transcript.push({ action: "click", selector: args.selector, mode: "browser_dom" });
+              executedActions++;
+            } else if (call.name === "fill" && args.selector) {
+              await page.locator(args.selector).first().fill(args.value || "", { timeout: 5000 });
+              transcript.push({ action: "fill", selector: args.selector, value: args.value, mode: "browser_dom" });
+              executedActions++;
+            } else if (call.name === "press" && args.selector) {
+              await page.locator(args.selector).first().press(args.key || "Enter", { timeout: 5000 });
+              transcript.push({ action: "press", selector: args.selector, key: args.key, mode: "browser_dom" });
+              executedActions++;
+            }
+            if (typeof page.waitForTimeout === "function") await page.waitForTimeout(500);
+            else await new Promise((r) => setTimeout(r, 10));
+            const visibleText = await page.locator("body").innerText().catch(() => "");
+            messages.push({ role: "assistant", content: `Call ${call.name} with ${JSON.stringify(args)}` });
+            messages.push({ role: "user", content: `Tool result: Action executed. Current page text:\n${visibleText.slice(0, 1500)}` });
+          } catch (err) {
+            transcript.push({ action: "action_error", tool: call.name, error: err.message, mode: "browser_dom" });
+            messages.push({ role: "user", content: `Action error: ${err.message}. Try an alternative selector.` });
+          }
+        }
+      } else if (turnRes.finalText) {
+        // Enforce that at least one action must have occurred before accepting final answer
+        if (executedActions === 0 && driver.turnIndex < driver.maxTurns - 1) {
+          messages.push({ role: "assistant", content: turnRes.finalText });
+          messages.push({
+            role: "user",
+            content: "You have not performed the requested interaction yet. You MUST call an action tool (such as click on the category filter or fill the search input) before providing the final answer.",
+          });
+          continue;
+        }
+        finalText = turnRes.finalText;
+        break;
+      }
     }
 
     const acct = driver.getAccounting();
@@ -492,11 +590,13 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
       model,
       usage: acct.usage,
       cost: acct.actualCostUsd,
+      cost_nominal: acct.nominalCostUsd || acct.costUsd || 0.0,
       model_snapshot: acct.modelSnapshot,
       budget_exhausted: acct.budgetExhausted,
       telemetry: {
         selected_mode: "browser_dom",
         executed_mode: "browser_dom",
+        actions_performed: executedActions,
         visual_invocation_count: 0,
         accounting: acct,
       },
@@ -568,10 +668,39 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
 
   let screenshotCount = 0;
   let screenshotBytes = 0;
+  let executedVisualActions = 0;
 
   if (model !== "none") {
     const driver = driverOptions.driverInstance || createModelDriver({ armId, model, maxTurns: 5, ...driverOptions });
-    const messages = [{ role: "user", content: task.prompt || `Perform task: ${task.id}` }];
+    const visualTools = [
+      {
+        name: "mouse_click",
+        description: "Click mouse at pixel coordinate [x, y] on screen",
+        input_schema: {
+          type: "object",
+          properties: {
+            x: { type: "number", description: "X pixel coordinate (0 to 1280)" },
+            y: { type: "number", description: "Y pixel coordinate (0 to 800)" },
+          },
+          required: ["x", "y"],
+        },
+      },
+      {
+        name: "type_text",
+        description: "Type text on the active element or input field",
+        input_schema: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "Text to type" },
+            press_enter: { type: "boolean", description: "Whether to press Enter key after typing" },
+          },
+          required: ["text"],
+        },
+      },
+    ];
+
+    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nYou operate the browser with visual screenshots. You MUST first execute the required mouse click or keyboard action on the screen (e.g. clicking the category filter button or search input) using the provided tools. Do NOT provide the final answer yet.`;
+    const messages = [{ role: "user", content: initialPrompt }];
     let finalText = "";
     let failure = null;
 
@@ -589,8 +718,9 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       let turnRes;
       try {
         turnRes = await driver.createTurn({
-          system: "You operate a web browser with visual screenshots. Inspect the screenshot carefully and provide the final result plainly beginning with 'Final answer:'.",
+          system: "You operate a web browser via visual screenshot computer use. You MUST perform the requested mouse or keyboard action first. Only after the action is executed and the updated screen is verified, provide your final answer beginning with 'Final answer:'.",
           messages,
+          tools: visualTools,
           screenshot: screenshotBuf,
         });
       } catch (e) {
@@ -605,15 +735,44 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
         break;
       }
 
-      if (turnRes.type === "computer_action" || turnRes.action) {
-        if (turnRes.coordinate && Array.isArray(turnRes.coordinate)) {
-          await page.mouse.click(turnRes.coordinate[0], turnRes.coordinate[1]);
-          transcript.push({ action: "mouse_click", coordinate: turnRes.coordinate, mode: "visual_grounded" });
-          messages.push({ role: "assistant", content: `Clicked at coordinates ${JSON.stringify(turnRes.coordinate)}` });
-        }
-      }
+      // Check tool calls or computer_action
+      const calls = turnRes.toolCalls && turnRes.toolCalls.length > 0
+        ? turnRes.toolCalls
+        : (turnRes.coordinate && Array.isArray(turnRes.coordinate)
+          ? [{ name: "mouse_click", arguments: { x: turnRes.coordinate[0], y: turnRes.coordinate[1] } }]
+          : []);
 
-      if (turnRes.finalText) {
+      if (calls.length > 0) {
+        for (const call of calls) {
+          const args = call.arguments || {};
+          if (call.name === "mouse_click" && args.x !== undefined && args.y !== undefined) {
+            await page.mouse.click(args.x, args.y);
+            executedVisualActions++;
+            transcript.push({ action: "mouse_click", coordinate: [args.x, args.y], mode: "visual_grounded" });
+            messages.push({ role: "assistant", content: `Clicked at coordinates [${args.x}, ${args.y}]` });
+            if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
+            else await new Promise((r) => setTimeout(r, 10));
+            messages.push({ role: "user", content: `Mouse click executed at [${args.x}, ${args.y}]. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
+          } else if (call.name === "type_text" && args.text) {
+            await page.keyboard.type(args.text);
+            if (args.press_enter) await page.keyboard.press("Enter");
+            executedVisualActions++;
+            transcript.push({ action: "type_text", text: args.text, press_enter: args.press_enter, mode: "visual_grounded" });
+            messages.push({ role: "assistant", content: `Typed text: ${args.text}` });
+            if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
+            else await new Promise((r) => setTimeout(r, 10));
+            messages.push({ role: "user", content: `Text typed. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
+          }
+        }
+      } else if (turnRes.finalText) {
+        if (executedVisualActions === 0 && driver.turnIndex < driver.maxTurns - 1) {
+          messages.push({ role: "assistant", content: turnRes.finalText });
+          messages.push({
+            role: "user",
+            content: "You have not performed the requested interaction on the screen yet. Please call mouse_click on the appropriate element coordinates before submitting your final answer.",
+          });
+          continue;
+        }
         finalText = turnRes.finalText;
         break;
       }
@@ -630,11 +789,13 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       model,
       usage: acct.usage,
       cost: acct.actualCostUsd,
+      cost_nominal: acct.nominalCostUsd || acct.costUsd || 0.0,
       model_snapshot: acct.modelSnapshot,
       budget_exhausted: acct.budgetExhausted,
       telemetry: {
         selected_mode: "visual_grounded",
         executed_mode: "visual_grounded",
+        actions_performed: executedVisualActions,
         screenshot_captured: true,
         screenshot_count: screenshotCount,
         screenshot_bytes: screenshotBytes,

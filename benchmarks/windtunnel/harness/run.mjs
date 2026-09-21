@@ -87,7 +87,7 @@ export async function runBatch({
           effort: result.effort ?? "",
           caching: result.caching ?? "unsupported",
           tokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
-          est_cost_usd: result.cost ?? 0,
+          est_cost_usd: result.cost_nominal ?? result.cost ?? 0,
           cost_estimated: result.cost_estimated ?? "",
           retries: result.retries ?? 0,
           retry_wait_ms: result.retry_wait_ms ?? 0,
