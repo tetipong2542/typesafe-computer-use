@@ -451,6 +451,9 @@ class BrowserSessionManager:
             if not self._playwright:
                 self._playwright = await async_playwright().start()
 
+            # Ensure at least one page target exists so connect_over_cdp does not fail
+            await self._ensure_target_exists(cdp_url)
+
             try:
                 self._browser = await self._playwright.chromium.connect_over_cdp(cdp_url)
             except Exception as e:
@@ -464,6 +467,25 @@ class BrowserSessionManager:
         except Exception:
             self._release_profile_lock()
             raise
+
+    async def _ensure_target_exists(self, cdp_url: str) -> None:
+        """Ensure Chrome has at least one active page target so connect_over_cdp does not fail."""
+        loop = asyncio.get_running_loop()
+
+        def _check_and_create() -> None:
+            try:
+                req = urllib.request.Request(f"{cdp_url}/json/list")
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                    targets = json.loads(resp.read().decode("utf-8"))
+                pages = [t for t in targets if t.get("type") == "page"]
+                if not pages:
+                    put_req = urllib.request.Request(f"{cdp_url}/json/new", method="PUT")
+                    with urllib.request.urlopen(put_req, timeout=1.0) as _:
+                        pass
+            except Exception as e:
+                logger.debug("Failed to ensure target exists before connect_over_cdp: %s", e)
+
+        await loop.run_in_executor(None, _check_and_create)
 
     async def _check_cdp_ready(self, cdp_url: str) -> bool:
         """Probe CDP JSON version endpoint synchronously via loopback."""
@@ -515,6 +537,7 @@ class BrowserSessionManager:
             "--no-default-browser-check",
             "--disable-popup-blocking",
             "--disable-blink-features=AutomationControlled",
+            "about:blank",
         ]
         if self.config.headless:
             cmd.extend(["--headless=new", "--disable-gpu"])

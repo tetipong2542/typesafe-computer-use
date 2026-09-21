@@ -44,4 +44,4 @@ tests/test_worker_state.py ....                                          [100%]
     _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-================== 270 passed, 1 warning in 61.23s (0:01:01) ===================
+======================= 270 passed, 1 warning in 45.98s ========================

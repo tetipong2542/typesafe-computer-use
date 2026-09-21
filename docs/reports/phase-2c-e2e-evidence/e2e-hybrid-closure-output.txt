@@ -1,0 +1,61 @@
+==========================================================
+ Phase 2C Structured Hybrid Execution E2E: macos-worker
+==========================================================
+[1/8] Acquiring VM IP address...
+VM acquired IP: 192.168.64.3
+[2/8] Setting INTERACTION_ROUTER_MODE=hybrid in guest .env...
+INTERACTION_ROUTER_MODE="hybrid"
+[3/8] Restarting Worker LaunchAgent daemon with hybrid mode...
+[4/8] Verifying Worker API health on http://192.168.64.3:8000/healthz...
+Worker API health confirmed.
+CDP binding security verified: strictly loopback.
+[5/8] Submitting task under INTERACTION_ROUTER_MODE=hybrid...
+Create Task Response: {"task_id":"task_20260921-032249_d123b5","run_id":"run_20260921-032249_7c9b5929","state":"queued","goal":"Check hybrid execution status in Google Chrome"}
+Active Task ID: task_20260921-032249_d123b5
+[6/8] Polling for Step 1 & 2 perception and hybrid execution...
+  [Poll 1/40] State: running, Step: 1, Screenshot: 
+  [Poll 2/40] State: running, Step: 1, Screenshot: step-001.png
+  [Poll 3/40] State: running, Step: 2, Screenshot: step-002.png
+  [Poll 4/40] State: stopped, Step: 2, Screenshot: step-002.png
+Task reached terminal state: stopped
+[7/8] Verifying Phase 2C Hybrid Telemetry in Guest SQLite database...
+Retrieved 10 events for task task_20260921-032249_d123b5
+  step=0 phase=state_changed action=None router_mode=legacy executed_mode=visual_grounded
+  step=0 phase=state_changed action=None router_mode=legacy executed_mode=visual_grounded
+  step=0 phase=state_changed action=None router_mode=legacy executed_mode=visual_grounded
+  step=1 phase=step_perceived action=None router_mode=legacy executed_mode=visual_grounded
+  step=1 phase=action_evaluating action=use_browser router_mode=legacy executed_mode=visual_grounded
+  step=1 phase=action_executed action=use_browser router_mode=hybrid executed_mode=visual_grounded
+  step=2 phase=step_perceived action=None router_mode=legacy executed_mode=visual_grounded
+  step=2 phase=action_evaluating action=use_browser router_mode=legacy executed_mode=visual_grounded
+  step=2 phase=action_executed action=use_browser router_mode=hybrid executed_mode=visual_grounded
+  step=0 phase=state_changed action=None router_mode=legacy executed_mode=visual_grounded
+Verified action_executed event: id=evt_task_20260921-032249_d123b5_000006, action=use_browser
+  router_mode: hybrid
+  selected_mode: visual_grounded
+  executed_mode: visual_grounded
+  fallback_from: None
+  fallback_count: 0
+  side_effect_state: not_started
+Verified action_executed event: id=evt_task_20260921-032249_d123b5_000009, action=use_browser
+  router_mode: hybrid
+  selected_mode: visual_grounded
+  executed_mode: visual_grounded
+  fallback_from: None
+  fallback_count: 0
+  side_effect_state: not_started
+Hybrid telemetry assertions PASSED.
+[8/8] Verifying Screenshot retrieval and Safety Controls in Hybrid Mode...
+Retrieved screenshot verified: 1440x900 PNG (RGB)
+Screenshot verified.
+Testing Human Takeover in Hybrid Mode...
+Takeover response: {"status":"takeover","task_id":"task_20260921-032249_d123b5","input_locked":true,"vnc_uri":"vnc://admin@192.168.64.3","guest_ip":"192.168.64.3","instructions":"Open native macOS Screen Sharing on host: open 'vnc://admin@192.168.64.3'. Enter guest credentials in macOS Screen Sharing UI."}
+Takeover verified with input lock in Hybrid mode.
+Guest input lock confirmed engaged.
+Testing Emergency Stop in Hybrid Mode...
+Emergency stop response: {"status":"emergency_stopped","task_id":"task_20260921-032249_d123b5","input_locked":true}
+Emergency stop confirmed input_locked=True in Hybrid mode.
+Input lock cleanly cleared after reset.
+
+[9/9] Running Phase 2C Closure E2E (Direct DOM, Fallback, Mixed Mode, Safety)...
+building file list ... 

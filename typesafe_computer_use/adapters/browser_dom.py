@@ -454,6 +454,12 @@ class BrowserDOMAdapter(InteractionAdapter):
 
         # Check match count and resolve ambiguity
         count = await locator.count()
+        if count == 0 and not any(target.startswith(p) for p in ("#", ".", "[", "xpath=", "css=", "//", "id=")):
+            text_loc = page.get_by_text(target)
+            if await text_loc.count() > 0:
+                locator = text_loc
+                count = await locator.count()
+
         if count == 0:
             raise ElementNotFoundError(f"Element not found matching target: {target}")
 

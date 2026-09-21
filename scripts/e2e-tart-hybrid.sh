@@ -250,6 +250,17 @@ sleep 1
 ${SSH_CMD} "test ! -f /tmp/typesafe_input_locked"
 echo "Input lock cleanly cleared after reset."
 
+# 9. Execute Phase 2C Closure E2E Suite (Direct DOM, Fallback, Mixed Mode, Safety)
+echo ""
+echo "[9/9] Running Phase 2C Closure E2E (Direct DOM, Fallback, Mixed Mode, Safety)..."
+${SSH_CMD} "
+    rsync -av --exclude='.venv' --exclude='worker.db*' '/Volumes/My Shared Files/workspace/' /Users/admin/typesafe-computer-use/
+    cd /Users/admin/typesafe-computer-use
+    .venv/bin/python ./scripts/run_hybrid_closure_e2e.py
+    rsync -av /Users/admin/typesafe-computer-use/docs/reports/phase-2c-e2e-evidence/ '/Volumes/My Shared Files/workspace/docs/reports/phase-2c-e2e-evidence/'
+"
+echo "Phase 2C Closure E2E suite executed and evidence synced."
+
 echo "=========================================================="
 echo " Phase 2C Structured Hybrid Execution E2E PASSED 100%!"
 echo "=========================================================="
