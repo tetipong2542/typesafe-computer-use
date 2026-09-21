@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from typesafe_computer_use.adapters.models import (
     CapabilityReport,

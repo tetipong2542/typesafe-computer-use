@@ -213,10 +213,7 @@ class WebMCPDiscoveryService:
         origin = self._extract_origin(page.url)
         cache_key = (origin, navigation_epoch)
 
-        if self.implementation_mode == "native":
-            script = NATIVE_WEBMCP_DISCOVERY_JS
-        else:
-            script = COMPATIBILITY_BRIDGE_DISCOVERY_JS
+        script = NATIVE_WEBMCP_DISCOVERY_JS if self.implementation_mode == "native" else COMPATIBILITY_BRIDGE_DISCOVERY_JS
 
         try:
             eval_res = await page.evaluate(script)

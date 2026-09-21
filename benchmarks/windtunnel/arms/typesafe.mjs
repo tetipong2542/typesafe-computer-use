@@ -234,13 +234,25 @@ export async function runWebMCPNative({ task, capsule, page, model = "none" }) {
 
   // Execute matching tool or recipe
   let finalText = "";
-  const recipe = task.recipe ?? RECIPES[task.id];
-  if (recipe) {
-    const res = await executeDOMRecipe(page, recipe, capsule.baseUrl);
-    finalText = res.finalText;
-    transcript.push(...res.transcript);
+  const matchingTool = tools.find((t) => t.name === task.tool_name || (task.tool_name && t.name.includes(task.tool_name)));
+  if (matchingTool) {
+    try {
+      const toolRes = await executeNativeTool(page, matchingTool.name, task.tool_args || {});
+      finalText = typeof toolRes === "string" ? toolRes : (toolRes?.text || toolRes?.result || JSON.stringify(toolRes));
+      transcript.push({ action: "execute_native_tool", tool: matchingTool.name, result: toolRes });
+    } catch (e) {
+      transcript.push({ action: "execute_tool_error", tool: matchingTool.name, error: e.message });
+      return buildResult({ armId, finalText: "", transcript, failure: "tool-execution-failed", setupMs });
+    }
   } else {
-    finalText = await page.locator("body").innerText();
+    const recipe = task.recipe ?? RECIPES[task.id];
+    if (recipe) {
+      const res = await executeDOMRecipe(page, recipe, capsule.baseUrl);
+      finalText = res.finalText;
+      transcript.push(...res.transcript);
+    } else {
+      finalText = await page.locator("body").innerText();
+    }
   }
 
   return buildResult({

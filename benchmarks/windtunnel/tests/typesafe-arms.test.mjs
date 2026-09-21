@@ -13,6 +13,7 @@ import {
   runHybridAuto,
   runWebMCPCompat,
 } from "../arms/typesafe.mjs";
+import { score } from "../scoring/predicates.mjs";
 
 test("selfCheck reports framework metadata and all 5 arms", async () => {
   const check = await selfCheck();
@@ -132,3 +133,142 @@ test("ts-hybrid-auto probes WebMCP and cleanly falls back to DOM", async () => {
   assert.equal(res.transcript[0].from_mode, "webmcp_native");
   assert.equal(res.transcript[0].to_mode, "browser_dom");
 });
+
+test("ts-webmcp-native deterministic pipeline: request -> tool execution -> score pass", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    async evaluate(fn, args) {
+      if (typeof fn === "function") {
+        // hasNativeWebMCP check:
+        return true;
+      }
+      return false;
+    },
+  };
+  // Mock evaluate to handle hasNativeWebMCP, discoverNativeTools, and executeNativeTool
+  page.evaluate = async (fn, arg) => {
+    const fnStr = fn.toString();
+    if (fnStr.includes("document.modelContext.getTools")) {
+      if (fnStr.includes("tools.find")) {
+        return "Found Figma collaborative design tool";
+      }
+      return [{ name: "search_tool", description: "Search tools", input_schema: {} }];
+    }
+    if (fnStr.includes("document.modelContext")) {
+      return true;
+    }
+    return null;
+  };
+
+  const task = {
+    id: "directory-search",
+    tool_name: "search_tool",
+    tool_args: { query: "design" },
+    predicate: {
+      type: "answer",
+      contains_any: ["figma", "dribbble"],
+    },
+  };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runWebMCPNative({ task, capsule, page });
+  assert.equal(res.failure, null);
+  assert.match(res.finalText, /Figma/i);
+
+  const verdict = await score(task.predicate, capsule, res.finalText);
+  assert.equal(verdict.pass, true, "WebMCP result must satisfy task predicate");
+});
+
+test("ts-browser-dom deterministic pipeline: request -> locator action -> score pass", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    locator(selector) {
+      return {
+        async fill(val) {},
+        async click() {},
+        async press(k) {},
+        async innerText() { return "The collaborative interface design tool"; },
+      };
+    },
+  };
+  const task = {
+    id: "directory-detail",
+    predicate: {
+      type: "answer",
+      contains: ["collaborative"],
+    },
+  };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runBrowserDOM({ task, capsule, page });
+  assert.equal(res.failure, null);
+  const verdict = await score(task.predicate, capsule, res.finalText);
+  assert.equal(verdict.pass, true, "DOM result must satisfy task predicate");
+});
+
+test("ts-visual deterministic pipeline: request -> screenshot perception -> score pass", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    async screenshot() { return Buffer.from("fake_png_bytes"); },
+    locator(selector) {
+      return {
+        async fill(val) {},
+        async click() {},
+        async press(k) {},
+        async innerText() { return "Figma design listing"; },
+      };
+    },
+  };
+  const task = {
+    id: "directory-search",
+    predicate: {
+      type: "answer",
+      contains_any: ["figma"],
+    },
+  };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runVisual({ task, capsule, page });
+  assert.equal(res.failure, null);
+  assert.equal(res.transcript[0].mode, "visual_grounded");
+  assert.equal(res.transcript[0].screenshot_bytes, 14);
+
+  const verdict = await score(task.predicate, capsule, res.finalText);
+  assert.equal(verdict.pass, true, "Visual result must satisfy task predicate");
+});
+
+test("ts-hybrid-auto deterministic pipeline: WebMCP miss -> DOM fallback -> score pass", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    async evaluate() { return false; }, // Native WebMCP unavailable -> cascades
+    locator(selector) {
+      return {
+        async fill(val) {},
+        async click() {},
+        async press(k) {},
+        async innerText() { return "Filtered list: GitHub and React"; },
+      };
+    },
+  };
+  const task = {
+    id: "directory-filter",
+    predicate: {
+      type: "answer",
+      matches: "\\b(github|react)\\b",
+    },
+  };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runHybridAuto({ task, capsule, page });
+  assert.equal(res.failure, null);
+  assert.equal(res.transcript[0].action, "fallback");
+  assert.equal(res.transcript[0].to_mode, "browser_dom");
+
+  const verdict = await score(task.predicate, capsule, res.finalText);
+  assert.equal(verdict.pass, true, "Hybrid auto fallback result must satisfy task predicate");
+});
+
