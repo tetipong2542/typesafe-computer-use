@@ -35,11 +35,11 @@ const PRESETS = { smoke: { n: 1 }, lite: { n: 3 }, full: { n: 3 } };
 const ARMS = {
   scripted: { id: "scripted", run: runScripted, model: "none", paid: false },
   // TypeSafe Computer Use Arms
-  "ts-webmcp-native": { id: "ts-webmcp-native", run: runTSWebMCPNative, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
-  "ts-browser-dom": { id: "ts-browser-dom", run: runTSBrowserDOM, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
-  "ts-visual": { id: "ts-visual", run: runTSVisual, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
-  "ts-hybrid-auto": { id: "ts-hybrid-auto", run: runTSHybridAuto, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
-  "ts-webmcp-compat": { id: "ts-webmcp-compat", run: runTSWebMCPCompat, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: false, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-webmcp-native": { id: "ts-webmcp-native", run: runTSWebMCPNative, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: true, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-browser-dom": { id: "ts-browser-dom", run: runTSBrowserDOM, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-visual": { id: "ts-visual", run: runTSVisual, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-hybrid-auto": { id: "ts-hybrid-auto", run: runTSHybridAuto, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: true, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
+  "ts-webmcp-compat": { id: "ts-webmcp-compat", run: runTSWebMCPCompat, model: "gpt-5.6-sol", version: TYPESAFE_VERSION, paid: true, webmcp: true, key: (m) => String(m).startsWith("claude") ? "ANTHROPIC_API_KEY" : undefined },
   // Standard WindTunnel Baseline Arms
   "cu-claude": { id: "cu-claude", run: runCUClaude, model: "claude-sonnet-4-6", version: CU_CLAUDE_VERSION, key: "ANTHROPIC_API_KEY", paid: true },
   "cu-openai": { id: "cu-openai", run: runCUOpenAI, model: "gpt-5.5", version: CU_OPENAI_VERSION, key: "OPENAI_API_KEY", paid: true },
@@ -160,7 +160,12 @@ function fakePage() {
 
 async function openPage(env) {
   if (env.WT_FAKE_LIFECYCLE === "1") return { newContext: async () => ({ newPage: async () => fakePage(), close: async () => {} }), close: async () => {} };
-  const browser = await chromium.launch({ headless: true, ...(env.WT_CHROME ? { executablePath: env.WT_CHROME } : {}) });
+  const chromeArgs = env.WT_CHROME_ARGS ? env.WT_CHROME_ARGS.split(/\s+/).filter(Boolean) : [];
+  const browser = await chromium.launch({
+    headless: true,
+    ...(env.WT_CHROME ? { executablePath: env.WT_CHROME } : {}),
+    ...(chromeArgs.length > 0 ? { args: chromeArgs } : {}),
+  });
   return browser;
 }
 

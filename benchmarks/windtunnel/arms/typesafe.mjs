@@ -452,7 +452,7 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
     const domTools = [
       {
         name: "click",
-        description: "Click an interactive element on the page using a CSS selector or text locator (e.g. 'a:has-text(\"Development\")' or 'button:has-text(\"Development\")')",
+        description: "Click an interactive element on the page using a CSS selector or text locator (e.g. 'button:has-text(\"Submit\")' or 'a.nav-link')",
         input_schema: {
           type: "object",
           properties: {
@@ -507,7 +507,7 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
       return items.slice(0, 25);
     }).catch(() => []);
 
-    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nInteractive elements on page:\n${JSON.stringify(interactiveSummary, null, 2)}\n\nYou MUST first execute the requested action (e.g. clicking the category filter button or filling the search box) using the provided tools before stating the final answer.`;
+    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nInteractive elements on page:\n${JSON.stringify(interactiveSummary, null, 2)}\n\nYou MUST first execute the requested action (such as clicking an element or filling an input) using the provided tools before stating the final answer.`;
     const messages = [{ role: "user", content: initialPrompt }];
 
     while (driver.turnIndex < driver.maxTurns) {
@@ -570,7 +570,7 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
           messages.push({ role: "assistant", content: turnRes.finalText });
           messages.push({
             role: "user",
-            content: "You have not performed the requested interaction yet. You MUST call an action tool (such as click on the category filter or fill the search input) before providing the final answer.",
+            content: "You have not performed the requested interaction yet. You MUST call an action tool (such as click or fill) before providing the final answer.",
           });
           continue;
         }
@@ -699,7 +699,7 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       },
     ];
 
-    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nYou operate the browser with visual screenshots. You MUST first execute the required mouse click or keyboard action on the screen (e.g. clicking the category filter button or search input) using the provided tools. Do NOT provide the final answer yet.`;
+    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nYou operate the browser with visual screenshots. You MUST first execute the required mouse click or keyboard action on the screen using the provided tools. Do NOT provide the final answer yet.`;
     const messages = [{ role: "user", content: initialPrompt }];
     let finalText = "";
     let failure = null;
