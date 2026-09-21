@@ -150,11 +150,21 @@ async function discoverNativeTools(page) {
   return await page.evaluate(async () => {
     if (!document?.modelContext?.getTools) return [];
     const tools = await document.modelContext.getTools();
-    return tools.map((t) => ({
-      name: t.name,
-      description: t.description || "",
-      input_schema: t.inputSchema || t.input_schema || { type: "object", properties: {} },
-    }));
+    return tools.map((t) => {
+      let schema = t.inputSchema || t.input_schema || { type: "object", properties: {} };
+      if (typeof schema === "string") {
+        try {
+          schema = JSON.parse(schema);
+        } catch {
+          schema = { type: "object", properties: {} };
+        }
+      }
+      return {
+        name: t.name,
+        description: t.description || "",
+        input_schema: schema,
+      };
+    });
   });
 }
 

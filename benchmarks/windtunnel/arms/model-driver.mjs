@@ -434,14 +434,24 @@ export class OpenAICodexModelDriver extends ModelDriver {
 
     // Format tools for OpenAI API
     const formattedTools = tools.length > 0
-      ? tools.map((t) => ({
-          type: "function",
-          function: {
-            name: t.name,
-            description: t.description || "",
-            parameters: t.input_schema || t.parameters || { type: "object", properties: {} },
-          },
-        }))
+      ? tools.map((t) => {
+          let params = t.input_schema || t.parameters || { type: "object", properties: {} };
+          if (typeof params === "string") {
+            try {
+              params = JSON.parse(params);
+            } catch {
+              params = { type: "object", properties: {} };
+            }
+          }
+          return {
+            type: "function",
+            function: {
+              name: t.name,
+              description: t.description || "",
+              parameters: params,
+            },
+          };
+        })
       : undefined;
 
     const requestBody = {
@@ -474,6 +484,10 @@ export class OpenAICodexModelDriver extends ModelDriver {
     }
 
     const data = await res.json();
+    if (data.error) {
+      const msg = typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error));
+      throw new Error(`OpenAI proxy returned error: ${msg}`);
+    }
     const latency_ms = Date.now() - startMs;
 
     const choice = data.choices?.[0];
