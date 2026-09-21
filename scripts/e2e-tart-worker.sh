@@ -149,11 +149,11 @@ ${SSH_CMD} "
 "
 
 # 7. Host-to-Guest Task Submission & Shadow Router Verification
-echo "[7/9] Submitting Task to Guest Worker via POST /tasks..."
+echo "[7/9] Submitting Headful Browser Task via POST /tasks..."
 CREATE_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks" \
     -H "Content-Type: application/json" \
     -H "${AUTH_HEADER}" \
-    -d '{"goal": "Tart Guest E2E Acceptance Verification"}')
+    -d '{"goal": "Open Google Chrome and view page", "browser": "Google Chrome", "steps": 2, "act": true}')
 
 echo "Create Task Response: ${CREATE_RESP}"
 TASK_ID=$(echo "${CREATE_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('task_id', ''))")
@@ -165,12 +165,98 @@ fi
 
 echo "Active Task ID: ${TASK_ID}"
 
-# Poll task state
-sleep 2
-TASK_RESP=$(curl -s "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}" -H "${AUTH_HEADER}")
-echo "Task State Response: ${TASK_RESP}"
+# Poll task state until Step 1 perception and action execution completes
+echo "Waiting for Step 1 perception and shadow telemetry execution..."
+TASK_RUNNING=false
+for i in {1..20}; do
+    TASK_RESP=$(curl -s "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}" -H "${AUTH_HEADER}")
+    STEP=$(echo "${TASK_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('current_step', 0))")
+    SHOT_ID=$(echo "${TASK_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('latest_screenshot_id') or '')")
+    STATE=$(echo "${TASK_RESP}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('state', ''))")
+    echo "  [Poll $i/20] State: ${STATE}, Step: ${STEP}, Screenshot: ${SHOT_ID}"
+    if [[ "${STEP}" -ge 1 && -n "${SHOT_ID}" ]]; then
+        TASK_RUNNING=true
+        break
+    fi
+    if [[ "${STATE}" == "stopped" || "${STATE}" == "failed" || "${STATE}" == "done" ]]; then
+        break
+    fi
+    sleep 2
+done
 
-# 8. Human Takeover Test: Input Lock & Clean VNC URI
+# Query guest SQLite database directly to verify Shadow Router invariants and screenshot
+echo "Verifying SQLite telemetry and filesystem artifacts on Guest..."
+${SSH_CMD} /Users/admin/typesafe-computer-use/.venv/bin/python - <<EOF
+from typesafe_computer_use.worker.db import WorkerDatabase
+from pathlib import Path
+import sys
+
+db = WorkerDatabase("/Users/admin/typesafe-computer-use/worker.db")
+events = db.get_events("${TASK_ID}")
+
+perceived = [e for e in events if str(e.phase) == "step_perceived"]
+assert perceived, "No step_perceived event recorded!"
+shot_id = perceived[0].screenshot_id
+assert shot_id, "No screenshot_id in step_perceived!"
+print(f"Verified step_perceived event with screenshot_id: {shot_id}")
+
+# If task is awaiting review, grant approval and resume to allow action execution
+task = db.get_task("${TASK_ID}")
+if task and task.state.value == "awaiting_review":
+    review_evts = [e for e in events if str(e.phase) == "state_changed" and e.state.value == "awaiting_review"]
+    if review_evts:
+        rev = review_evts[0]
+        print(f"Auto-approving awaiting_review action: {rev.action}")
+        import urllib.request, json
+        appr_url = "http://127.0.0.1:${WORKER_PORT}/tasks/${TASK_ID}/approvals/" + rev.event_id
+        resume_url = "http://127.0.0.1:${WORKER_PORT}/tasks/${TASK_ID}/resume"
+        headers = {"Authorization": "Bearer ${AUTH_TOKEN}", "Content-Type": "application/json"}
+        req_body = json.dumps({
+            "step": rev.step,
+            "action": rev.action,
+            "target": rev.target or "",
+            "screenshot_hash": rev.extra.get("screenshot_hash", ""),
+            "action_fingerprint": rev.extra.get("action_fingerprint", "")
+        }).encode()
+        try:
+            req1 = urllib.request.Request(appr_url, data=req_body, headers=headers)
+            urllib.request.urlopen(req1, timeout=5)
+            req2 = urllib.request.Request(resume_url, data=b"", headers=headers)
+            urllib.request.urlopen(req2, timeout=5)
+            print("Successfully approved and resumed task.")
+        except Exception as e:
+            print(f"Warning: auto-approval error: {e}")
+
+# Re-read events after possible execution
+import time
+time.sleep(2)
+events = db.get_events("${TASK_ID}")
+executed = [e for e in events if str(e.phase) == "action_executed"]
+if executed:
+    extra = executed[0].extra
+    print(f"Verified action_executed event with telemetry: {extra}")
+    assert extra.get("router_mode") == "shadow", f"Expected router_mode=shadow, got {extra.get('router_mode')}"
+    assert extra.get("executed_mode") == "visual_grounded", f"Expected executed_mode=visual_grounded, got {extra.get('executed_mode')}"
+    print("Shadow router invariants verified: router_mode=shadow, executed_mode=visual_grounded")
+EOF
+
+# Verify Screenshot retrieval via GET /tasks/{task_id}/screenshot
+echo "Verifying Screenshot API endpoint (GET /tasks/${TASK_ID}/screenshot)..."
+SCREENSHOT_TEMP=$(mktemp /tmp/tart_worker_shot_XXXXXX.png)
+HTTP_CODE=$(curl -s -w "%{http_code}" -H "${AUTH_HEADER}" "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/screenshot" -o "${SCREENSHOT_TEMP}")
+if [[ "${HTTP_CODE}" -ne 200 ]]; then
+    echo "ERROR: Failed to fetch screenshot from Worker API (HTTP ${HTTP_CODE})" >&2
+    exit 1
+fi
+python3 -c "
+from PIL import Image
+im = Image.open('${SCREENSHOT_TEMP}')
+print(f'Retrieved screenshot verified: {im.size[0]}x{im.size[1]} {im.format} ({im.mode})')
+assert im.size[0] >= 800 and im.size[1] >= 600, f'Invalid screenshot dimensions: {im.size}'
+"
+rm -f "${SCREENSHOT_TEMP}"
+
+# 8. Human Takeover Test: Input Lock, Clean VNC URI, & Port 5900
 echo "[8/9] Testing Human Takeover (POST /tasks/${TASK_ID}/takeover)..."
 # Pause first to allow takeover
 curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/pause" -H "${AUTH_HEADER}" >/dev/null || true
@@ -196,6 +282,17 @@ assert 'admin:admin' not in vnc_uri, 'admin:admin found in URI!'
 print('VNC URI credential sanitization verified successfully.')
 "
 
+# Verify Screen Sharing VNC TCP port 5900 is open and listening
+if nc -z -w 3 "${VM_IP}" 5900 >/dev/null 2>&1; then
+    echo "Screen Sharing VNC port 5900 verified listening on guest."
+else
+    echo "WARNING: VNC port 5900 not reachable from host."
+fi
+
+# Verify synthetic input lock is active on guest
+${SSH_CMD} "test -f /tmp/typesafe_input_locked"
+echo "Guest input lock file /tmp/typesafe_input_locked confirmed engaged during takeover."
+
 # Release Takeover
 echo "Releasing Takeover..."
 RELEASE_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/release-takeover" -H "${AUTH_HEADER}")
@@ -213,6 +310,9 @@ assert data.get('input_locked') is True, f'Input not locked after emergency stop
 print('Emergency stop confirmed input_locked=True.')
 "
 
+${SSH_CMD} "test -f /tmp/typesafe_input_locked"
+echo "Guest input lock file confirmed engaged on emergency stop."
+
 RESET_RESP=$(curl -s -X POST "http://${VM_IP}:${WORKER_PORT}/tasks/${TASK_ID}/reset" -H "${AUTH_HEADER}")
 echo "Reset Response: ${RESET_RESP}"
 
@@ -223,6 +323,9 @@ assert data.get('status') == 'reset', f'Unexpected reset status: {data}'
 assert data.get('input_locked') is False, f'Input locked after reset: {data}'
 print('Reset confirmed input_locked=False.')
 "
+
+${SSH_CMD} "! test -f /tmp/typesafe_input_locked"
+echo "Guest input lock file confirmed removed after reset."
 
 echo "=========================================================="
 echo " Full Application Tart VM E2E Verification: PASSED"

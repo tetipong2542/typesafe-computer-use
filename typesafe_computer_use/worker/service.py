@@ -887,7 +887,8 @@ class WorkerService:
         except Exception as e:
             outcome = "failed"
             error_msg = str(e)
-            log(f"Worker task error: {e}")
+            import traceback
+            log(f"Worker task error: {e}\n{traceback.format_exc()}")
         finally:
             if not controller.emergency_stopped:
                 macos.set_input_lock(False)
