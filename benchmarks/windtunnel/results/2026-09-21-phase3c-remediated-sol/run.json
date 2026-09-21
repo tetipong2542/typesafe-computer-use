@@ -1,0 +1,705 @@
+{
+  "options": {
+    "preset": "smoke",
+    "sites": "directory-9d8",
+    "arms": [
+      "ts-webmcp-native",
+      "ts-browser-dom",
+      "ts-visual",
+      "ts-hybrid-auto"
+    ],
+    "seed": 1,
+    "budget": 2,
+    "perturbed": false,
+    "models": {},
+    "maxConsecutiveInfra": 2,
+    "taskIds": [
+      "directory-search",
+      "directory-filter"
+    ],
+    "defaultModel": "gpt-5.6-sol",
+    "n": 1,
+    "label": "phase3c-remediated-sol",
+    "fake": false,
+    "model": "gpt-5.6-sol",
+    "armModels": {
+      "ts-webmcp-native": "gpt-5.6-sol",
+      "ts-browser-dom": "gpt-5.6-sol",
+      "ts-visual": "gpt-5.6-sol",
+      "ts-hybrid-auto": "gpt-5.6-sol"
+    },
+    "git_revision": "cc9df78ffb9a403a6bcb33b0155a1bffc525629b",
+    "task_set_hash": "07aef320029195b45128a93364d7bbd7c45853ffb8fa5e54613d0dd37e4063d2",
+    "goldens_hash": "88421834fd03b608de6ec39ec125305c9f468f9f9729e801b29aef317eb3f2ec",
+    "prices": [
+      [
+        "claude-fable-5",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "claude-opus-5",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-opus-4",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-sonnet-5",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4-6",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-haiku-4",
+        [
+          1,
+          5,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-6-astra",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "gpt-5.6-sol",
+        [
+          5,
+          30,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "gpt-5.6-terra",
+        [
+          2.5,
+          15,
+          0.25,
+          3.125
+        ]
+      ],
+      [
+        "gpt-5.6-luna",
+        [
+          1,
+          6,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-5.5",
+        [
+          5,
+          30,
+          0.5,
+          0
+        ]
+      ],
+      [
+        "computer-use-preview",
+        [
+          1.5,
+          6,
+          0.15,
+          0
+        ]
+      ],
+      [
+        "gemini-3.6-flash",
+        [
+          0.75,
+          3.75,
+          0.075,
+          0
+        ]
+      ]
+    ]
+  },
+  "capsules": [
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    },
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "versions": {}
+    }
+  ],
+  "rows": [
+    {
+      "run_id": "directory-search_ts-webmcp-native_e4a2d787-5038-4fa1-af54-8d10bd055e3c",
+      "task_id": "directory-search",
+      "arm": "ts-webmcp-native",
+      "method": "ts-webmcp-native",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "typesafe-local",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3215",
+      "success": false,
+      "pass": false,
+      "failure_category": "harness-agent: native-webmcp-unsupported",
+      "wall_clock_s": "6.815",
+      "reset_s": "6.724",
+      "setup_s": "0.000",
+      "agent_s": "0.091",
+      "ms": 6815,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 0,
+      "est_cost_usd": 0,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:42:47.334Z",
+      "transcript": [
+        {
+          "error": "BLOCKED_BY_BROWSER_SUPPORT: Chrome document.modelContext is undefined",
+          "selected_mode": "webmcp",
+          "executed_mode": null,
+          "webmcp_implementation": "native"
+        }
+      ],
+      "final_text": ""
+    },
+    {
+      "run_id": "directory-filter_ts-webmcp-native_1f573c33-5637-411e-abb2-84c95c3b7fda",
+      "task_id": "directory-filter",
+      "arm": "ts-webmcp-native",
+      "method": "ts-webmcp-native",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "typesafe-local",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3215",
+      "success": false,
+      "pass": false,
+      "failure_category": "harness-agent: native-webmcp-unsupported",
+      "wall_clock_s": "7.276",
+      "reset_s": "7.189",
+      "setup_s": "0.000",
+      "agent_s": "0.087",
+      "ms": 7276,
+      "model_turns": 1,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 0,
+      "est_cost_usd": 0,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:42:54.707Z",
+      "transcript": [
+        {
+          "error": "BLOCKED_BY_BROWSER_SUPPORT: Chrome document.modelContext is undefined",
+          "selected_mode": "webmcp",
+          "executed_mode": null,
+          "webmcp_implementation": "native"
+        }
+      ],
+      "final_text": ""
+    },
+    {
+      "run_id": "directory-search_ts-browser-dom_395a8991-4889-4e2b-b362-5e3f94b38ac5",
+      "task_id": "directory-search",
+      "arm": "ts-browser-dom",
+      "method": "ts-browser-dom",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3216",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "14.888",
+      "reset_s": "6.850",
+      "setup_s": "0.000",
+      "agent_s": "8.038",
+      "ms": 14888,
+      "model_turns": 2,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 2517,
+      "output_tokens": 99,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 2616,
+      "est_cost_usd": 0.015555,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:44:04.966Z",
+      "transcript": [
+        {
+          "action": "click",
+          "selector": "button:has-text(\"Design\")",
+          "mode": "browser_dom"
+        }
+      ],
+      "final_text": "Final answer: **Figma**."
+    },
+    {
+      "run_id": "directory-filter_ts-browser-dom_830a5808-a43c-4417-9a82-79b6601f920c",
+      "task_id": "directory-filter",
+      "arm": "ts-browser-dom",
+      "method": "ts-browser-dom",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3216",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "13.744",
+      "reset_s": "6.818",
+      "setup_s": "0.000",
+      "agent_s": "6.926",
+      "ms": 13744,
+      "model_turns": 2,
+      "actions_or_tool_calls": 1,
+      "input_tokens": 2526,
+      "output_tokens": 74,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 2600,
+      "est_cost_usd": 0.01485,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:44:18.807Z",
+      "transcript": [
+        {
+          "action": "click",
+          "selector": "button:has-text(\"Development\")",
+          "mode": "browser_dom"
+        }
+      ],
+      "final_text": "Final answer: GitHub — “Where the world builds software.”"
+    },
+    {
+      "run_id": "directory-search_ts-visual_6bced72f-19f1-4148-93f1-359ff077caf3",
+      "task_id": "directory-search",
+      "arm": "ts-visual",
+      "method": "ts-visual",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3217",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "18.351",
+      "reset_s": "6.762",
+      "setup_s": "0.000",
+      "agent_s": "11.589",
+      "ms": 18351,
+      "model_turns": 2,
+      "actions_or_tool_calls": 3,
+      "input_tokens": 3108,
+      "output_tokens": 128,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 3236,
+      "est_cost_usd": 0.01938,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:44:58.527Z",
+      "transcript": [
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 42803,
+          "screenshot_index": 1
+        },
+        {
+          "action": "mouse_click",
+          "coordinate": [
+            851,
+            532
+          ],
+          "mode": "visual_grounded"
+        },
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 47221,
+          "screenshot_index": 2
+        }
+      ],
+      "final_text": "Final answer: Figma."
+    },
+    {
+      "run_id": "directory-filter_ts-visual_d972f98f-ae5a-4d51-9a1f-90821afa3131",
+      "task_id": "directory-filter",
+      "arm": "ts-visual",
+      "method": "ts-visual",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3217",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "14.405",
+      "reset_s": "7.975",
+      "setup_s": "0.000",
+      "agent_s": "6.430",
+      "ms": 14405,
+      "model_turns": 2,
+      "actions_or_tool_calls": 3,
+      "input_tokens": 3118,
+      "output_tokens": 67,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 3185,
+      "est_cost_usd": 0.017599999999999998,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:45:13.038Z",
+      "transcript": [
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 42803,
+          "screenshot_index": 1
+        },
+        {
+          "action": "mouse_click",
+          "coordinate": [
+            751,
+            532
+          ],
+          "mode": "visual_grounded"
+        },
+        {
+          "action": "perception",
+          "mode": "visual_grounded",
+          "screenshot_bytes": 47816,
+          "screenshot_index": 2
+        }
+      ],
+      "final_text": "Final answer: GitHub."
+    },
+    {
+      "run_id": "directory-search_ts-hybrid-auto_cb65291e-a640-4839-9331-a0868d82e589",
+      "task_id": "directory-search",
+      "arm": "ts-hybrid-auto",
+      "method": "ts-hybrid-auto",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3218",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "15.145",
+      "reset_s": "6.909",
+      "setup_s": "0.000",
+      "agent_s": "8.236",
+      "ms": 15145,
+      "model_turns": 2,
+      "actions_or_tool_calls": 2,
+      "input_tokens": 2517,
+      "output_tokens": 104,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 2621,
+      "est_cost_usd": 0.015705,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:46:23.871Z",
+      "transcript": [
+        {
+          "action": "fallback",
+          "from_mode": "webmcp_native",
+          "to_mode": "browser_dom",
+          "selected_mode": "webmcp",
+          "executed_mode": "browser_dom",
+          "fallback_from": "webmcp",
+          "fallback_to": "browser_dom",
+          "reason": "Native WebMCP document.modelContext unavailable"
+        },
+        {
+          "action": "click",
+          "selector": "button:has-text(\"Design\")",
+          "mode": "browser_dom"
+        }
+      ],
+      "final_text": "Final answer: **Figma**."
+    },
+    {
+      "run_id": "directory-filter_ts-hybrid-auto_755a4939-7683-425b-a642-2c84efa184aa",
+      "task_id": "directory-filter",
+      "arm": "ts-hybrid-auto",
+      "method": "ts-hybrid-auto",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3218",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "14.619",
+      "reset_s": "7.643",
+      "setup_s": "0.000",
+      "agent_s": "6.976",
+      "ms": 14619,
+      "model_turns": 2,
+      "actions_or_tool_calls": 2,
+      "input_tokens": 2526,
+      "output_tokens": 58,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 2584,
+      "est_cost_usd": 0.01437,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T07:46:38.597Z",
+      "transcript": [
+        {
+          "action": "fallback",
+          "from_mode": "webmcp_native",
+          "to_mode": "browser_dom",
+          "selected_mode": "webmcp",
+          "executed_mode": "browser_dom",
+          "fallback_from": "webmcp",
+          "fallback_to": "browser_dom",
+          "reason": "Native WebMCP document.modelContext unavailable"
+        },
+        {
+          "action": "click",
+          "selector": "button:has-text(\"Development\")",
+          "mode": "browser_dom"
+        }
+      ],
+      "final_text": "Final answer: GitHub — “Where the world builds software.”"
+    }
+  ],
+  "verdicts": [
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-webmcp-native",
+      "solved": false,
+      "passes": 0,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-webmcp-native",
+      "solved": false,
+      "passes": 0,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-browser-dom",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-browser-dom",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-visual",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-visual",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-hybrid-auto",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    },
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-filter",
+      "tier": "act-short",
+      "method": "ts-hybrid-auto",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    }
+  ]
+}
