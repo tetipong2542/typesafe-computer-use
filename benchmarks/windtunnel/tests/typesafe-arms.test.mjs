@@ -138,27 +138,19 @@ test("ts-webmcp-native deterministic pipeline: request -> tool execution -> scor
   delete process.env.WT_FAKE_LIFECYCLE;
   const page = {
     async goto() {},
-    async evaluate(fn, args) {
-      if (typeof fn === "function") {
-        // hasNativeWebMCP check:
-        return true;
-      }
-      return false;
-    },
-  };
-  // Mock evaluate to handle hasNativeWebMCP, discoverNativeTools, and executeNativeTool
-  page.evaluate = async (fn, arg) => {
-    const fnStr = fn.toString();
-    if (fnStr.includes("document.modelContext.getTools")) {
-      if (fnStr.includes("tools.find")) {
+    async evaluate(fn, arg) {
+      if (arg && arg.name) {
         return "Found Figma collaborative design tool";
       }
-      return [{ name: "search_tool", description: "Search tools", input_schema: {} }];
-    }
-    if (fnStr.includes("document.modelContext")) {
-      return true;
-    }
-    return null;
+      const fnStr = fn ? fn.toString() : "";
+      if (fnStr.includes("getTools")) {
+        return [{ name: "search_tool", description: "Search tools", input_schema: {} }];
+      }
+      if (fnStr.includes("modelContext")) {
+        return true;
+      }
+      return null;
+    },
   };
 
   const task = {
@@ -175,6 +167,10 @@ test("ts-webmcp-native deterministic pipeline: request -> tool execution -> scor
   const res = await runWebMCPNative({ task, capsule, page });
   assert.equal(res.failure, null);
   assert.match(res.finalText, /Figma/i);
+  assert.equal(res.telemetry.selected_mode, "webmcp");
+  assert.equal(res.telemetry.executed_mode, "webmcp");
+  assert.equal(res.telemetry.webmcp_implementation, "native");
+  assert.equal(res.telemetry.visual_invocation_count, 0);
 
   const verdict = await score(task.predicate, capsule, res.finalText);
   assert.equal(verdict.pass, true, "WebMCP result must satisfy task predicate");
@@ -182,8 +178,10 @@ test("ts-webmcp-native deterministic pipeline: request -> tool execution -> scor
 
 test("ts-browser-dom deterministic pipeline: request -> locator action -> score pass", async () => {
   delete process.env.WT_FAKE_LIFECYCLE;
+  let visualCalls = 0;
   const page = {
     async goto() {},
+    async screenshot() { visualCalls++; return Buffer.from(""); },
     locator(selector) {
       return {
         async fill(val) {},
@@ -204,15 +202,24 @@ test("ts-browser-dom deterministic pipeline: request -> locator action -> score 
 
   const res = await runBrowserDOM({ task, capsule, page });
   assert.equal(res.failure, null);
+  assert.equal(visualCalls, 0, "Visual screenshot must never be invoked in ts-browser-dom");
+  assert.equal(res.telemetry.selected_mode, "browser_dom");
+  assert.equal(res.telemetry.executed_mode, "browser_dom");
+  assert.equal(res.telemetry.visual_invocation_count, 0);
+
   const verdict = await score(task.predicate, capsule, res.finalText);
   assert.equal(verdict.pass, true, "DOM result must satisfy task predicate");
 });
 
 test("ts-visual deterministic pipeline: request -> screenshot perception -> score pass", async () => {
   delete process.env.WT_FAKE_LIFECYCLE;
+  let screenshotCaptured = false;
   const page = {
     async goto() {},
-    async screenshot() { return Buffer.from("fake_png_bytes"); },
+    async screenshot() {
+      screenshotCaptured = true;
+      return Buffer.from("fake_png_bytes");
+    },
     locator(selector) {
       return {
         async fill(val) {},
@@ -233,6 +240,10 @@ test("ts-visual deterministic pipeline: request -> screenshot perception -> scor
 
   const res = await runVisual({ task, capsule, page });
   assert.equal(res.failure, null);
+  assert.equal(screenshotCaptured, true);
+  assert.equal(res.telemetry.selected_mode, "visual_grounded");
+  assert.equal(res.telemetry.executed_mode, "visual_grounded");
+  assert.equal(res.telemetry.screenshot_captured, true);
   assert.equal(res.transcript[0].mode, "visual_grounded");
   assert.equal(res.transcript[0].screenshot_bytes, 14);
 
@@ -265,10 +276,93 @@ test("ts-hybrid-auto deterministic pipeline: WebMCP miss -> DOM fallback -> scor
 
   const res = await runHybridAuto({ task, capsule, page });
   assert.equal(res.failure, null);
+  assert.equal(res.telemetry.selected_mode, "webmcp");
+  assert.equal(res.telemetry.executed_mode, "browser_dom");
+  assert.equal(res.telemetry.fallback_from, "webmcp");
+  assert.equal(res.telemetry.fallback_to, "browser_dom");
+  assert.match(res.telemetry.fallback_reason, /Native WebMCP/);
   assert.equal(res.transcript[0].action, "fallback");
   assert.equal(res.transcript[0].to_mode, "browser_dom");
 
   const verdict = await score(task.predicate, capsule, res.finalText);
   assert.equal(verdict.pass, true, "Hybrid auto fallback result must satisfy task predicate");
+});
+
+test("ts-hybrid-auto adaptive routing selects native WebMCP when available", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    async evaluate(fn, arg) {
+      if (arg && arg.name) return "Direct Native WebMCP Result";
+      const fnStr = fn ? fn.toString() : "";
+      if (fnStr.includes("getTools")) {
+        return [{ name: "filter_tool", description: "Filter items", input_schema: {} }];
+      }
+      if (fnStr.includes("modelContext")) return true;
+      return null;
+    },
+    locator() {
+      return { async innerText() { return "DOM fallback"; } };
+    },
+  };
+  const task = {
+    id: "directory-filter",
+    tool_name: "filter_tool",
+    tool_args: {},
+  };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runHybridAuto({ task, capsule, page });
+  assert.equal(res.failure, null);
+  assert.equal(res.telemetry.selected_mode, "webmcp");
+  assert.equal(res.telemetry.executed_mode, "webmcp");
+  assert.equal(res.telemetry.webmcp_implementation, "native");
+  assert.equal(res.telemetry.fallback_from, null);
+});
+
+test("ts-webmcp-compat sets compatibility_bridge and never reports as native", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  let scriptInjected = false;
+  const page = {
+    async addInitScript() { scriptInjected = true; },
+    async goto() {},
+    locator() {
+      return { async innerText() { return "Compat Bridge Result"; } };
+    },
+  };
+  const task = { id: "test-compat" };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runWebMCPCompat({ task, capsule, page });
+  assert.equal(res.failure, null);
+  assert.equal(scriptInjected, true);
+  assert.equal(res.telemetry.selected_mode, "webmcp");
+  assert.equal(res.telemetry.executed_mode, "webmcp");
+  assert.equal(res.telemetry.webmcp_implementation, "compatibility_bridge");
+  assert.notEqual(res.telemetry.webmcp_implementation, "native");
+  assert.equal(res.telemetry.visual_invocation_count, 0);
+  assert.equal(res.transcript[0].action, "bridge_initialized");
+  assert.equal(res.transcript[0].webmcp_implementation, "compatibility_bridge");
+});
+
+test("ts-webmcp-native fails when tool list is empty on page", async () => {
+  delete process.env.WT_FAKE_LIFECYCLE;
+  const page = {
+    async goto() {},
+    async evaluate(fn) {
+      const fnStr = fn ? fn.toString() : "";
+      if (fnStr.includes("getTools")) return []; // 0 tools
+      if (fnStr.includes("modelContext")) return true; // native supported
+      return null;
+    },
+  };
+  const task = { id: "test-empty-tools" };
+  const capsule = { baseUrl: "http://example.local" };
+
+  const res = await runWebMCPNative({ task, capsule, page });
+  assert.equal(res.failure, "no-webmcp-tools");
+  assert.equal(res.telemetry.selected_mode, "webmcp");
+  assert.equal(res.telemetry.executed_mode, null);
+  assert.equal(res.telemetry.webmcp_implementation, "native");
 });
 
