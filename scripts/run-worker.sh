@@ -84,6 +84,12 @@ if [[ -e "${ENV_FILE}" ]]; then
                 CLICKER_ANSWER_MODEL)
                     export CLICKER_ANSWER_MODEL="$val"
                     ;;
+                INTERACTION_ROUTER_MODE)
+                    export INTERACTION_ROUTER_MODE="$val"
+                    ;;
+                INTERACTION_ROUTER_ENABLED)
+                    export INTERACTION_ROUTER_ENABLED="$val"
+                    ;;
                 *)
                     # Ignore non-allowlisted configuration keys
                     ;;
