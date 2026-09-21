@@ -220,7 +220,7 @@ class WorkerService:
             screenshot_id=screenshot_id,
             result=result,
             error=error,
-            interaction_mode=extra_dict.get("executed_mode") or "visual_grounded",
+            interaction_mode=extra_dict.get("interaction_mode") or extra_dict.get("selected_mode") or extra_dict.get("executed_mode") or "visual_grounded",
             verification_mode=extra_dict.get("verification_mode") or "visual_grounded",
             adapter=extra_dict.get("adapter") or "VisualComputerUseAdapter",
             router_reason=extra_dict.get("router_reason"),
@@ -235,6 +235,11 @@ class WorkerService:
             browser_session_id=extra_dict.get("browser_session_id"),
             page_id=extra_dict.get("page_id"),
             navigation_epoch=extra_dict.get("navigation_epoch"),
+            fallback_from=extra_dict.get("fallback_from"),
+            fallback_to=extra_dict.get("fallback_to"),
+            fallback_reason=extra_dict.get("fallback_reason"),
+            selected_mode=extra_dict.get("selected_mode"),
+            fallback_count=extra_dict.get("fallback_count", 0),
             extra=extra_dict,
         )
         await self.event_hub.publish(event)
@@ -766,15 +771,30 @@ class WorkerService:
                                 self.router.visual_adapter.set_executor(do_visual_perform)
 
                             target_str = target_text or decision.chosen
+                            site_val: str | None = None
+                            if hasattr(decision, "site") and decision.site is not None:
+                                raw_choice = getattr(decision.site, "choice", None)
+                                if isinstance(raw_choice, str):
+                                    site_val = raw_choice
+
+                            req_args: dict[str, Any] = {
+                                "confidence": float(decision.confidence) if isinstance(decision.confidence, (int, float)) else 0.0,
+                            }
+                            if site_val:
+                                req_args["site"] = site_val
+
                             req = InteractionRequest(
                                 mode=InteractionMode.VISUAL_GROUNDED,
                                 action=decision.kind.choice,
                                 target=target_str,
-                                arguments={
-                                    "confidence": decision.confidence,
-                                },
+                                arguments=req_args,
                                 execution_id=f"exec_{task_id}_{step}",
-                                context={"task_id": task_id, "step": step, "url": screen.url},
+                                context={
+                                    "task_id": task_id,
+                                    "step": step,
+                                    "url": screen.url,
+                                    "app": screen.app,
+                                },
                             )
                             res, shadow_dec = self._route_and_execute_sync(req)
                             what = str(res.result)
@@ -786,9 +806,16 @@ class WorkerService:
                     timing["total"] = round(time.perf_counter() - step_started, 3)
                     timings.append(timing)
 
-                    # Multi-point Trace (3): Post-Action with Shadow Telemetry
+                    # Multi-point Trace (3): Post-Action with Hybrid Telemetry
                     browser_session_id = getattr(getattr(getattr(self.router, "dom_adapter", None), "session_manager", None), "session_id", "")
                     nav_epoch = getattr(getattr(getattr(self.router, "dom_adapter", None), "session_manager", None), "get_navigation_epoch", lambda: 0)()
+
+                    selected_mode_val = shadow_dec.selected_mode.value if shadow_dec.selected_mode else shadow_dec.executed_mode.value
+                    executed_mode_val = shadow_dec.executed_mode.value
+                    fallback_from_val = shadow_dec.fallback_from.value if shadow_dec.fallback_from else None
+                    fallback_to_val = shadow_dec.fallback_to.value if shadow_dec.fallback_to else None
+                    fallback_reason_val = shadow_dec.fallback_reason
+                    fallback_count_val = getattr(shadow_dec, "fallback_count", 0)
 
                     self.emit_event_sync(
                         task_id=task_id,
@@ -802,8 +829,14 @@ class WorkerService:
                         result=what,
                         screenshot_id=annotated_filename,
                         extra={
+                            "interaction_mode": selected_mode_val,
+                            "selected_mode": selected_mode_val,
+                            "executed_mode": executed_mode_val,
+                            "fallback_from": fallback_from_val,
+                            "fallback_to": fallback_to_val,
+                            "fallback_reason": fallback_reason_val,
+                            "fallback_count": fallback_count_val,
                             "router_mode": shadow_dec.rollout_mode.value,
-                            "executed_mode": shadow_dec.executed_mode.value,
                             "shadow_mode": shadow_dec.shadow_mode.value if shadow_dec.shadow_mode else None,
                             "shadow_target": shadow_dec.shadow_target,
                             "shadow_confidence": shadow_dec.shadow_confidence,

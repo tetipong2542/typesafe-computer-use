@@ -176,11 +176,10 @@ class BrowserDOMAdapter(InteractionAdapter):
             timeout_ms = int(request.timeout_seconds * 1000)
             res_data: Any = None
 
-            side_effect = SideEffectState.UNKNOWN
-            await self._call_barrier("request_dispatched")
-
             if action == "navigate":
                 url = args.get("url") or target
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -188,6 +187,8 @@ class BrowserDOMAdapter(InteractionAdapter):
 
             elif action == "click":
                 locator = await self.resolve_locator(page, target, args)
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await locator.click(timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -196,6 +197,8 @@ class BrowserDOMAdapter(InteractionAdapter):
             elif action == "fill":
                 text = args.get("text", "")
                 locator = await self.resolve_locator(page, target, args)
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await locator.fill(text, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -210,6 +213,8 @@ class BrowserDOMAdapter(InteractionAdapter):
             elif action == "select_option":
                 value = args.get("value") or args.get("label") or ""
                 locator = await self.resolve_locator(page, target, args)
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await locator.select_option(value=value, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -217,6 +222,8 @@ class BrowserDOMAdapter(InteractionAdapter):
 
             elif action == "press":
                 key = args.get("key") or target
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await page.keyboard.press(key)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -225,6 +232,8 @@ class BrowserDOMAdapter(InteractionAdapter):
             elif action == "scroll":
                 delta_x = args.get("delta_x", 0)
                 delta_y = args.get("delta_y", 300)
+                side_effect = SideEffectState.UNKNOWN
+                await self._call_barrier("request_dispatched")
                 await page.mouse.wheel(delta_x, delta_y)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
                 await self._call_barrier("side_effect_committed")
@@ -235,13 +244,11 @@ class BrowserDOMAdapter(InteractionAdapter):
                 state = args.get("state", "visible")
                 await locator.wait_for(state=state, timeout=timeout_ms)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
-                await self._call_barrier("side_effect_committed")
                 res_data = {"wait_for": target, "state": state}
 
             elif action == "extract_text":
                 res_data = await self.extract_sanitized_dom(page)
                 side_effect = SideEffectState.CONFIRMED_SUCCESS
-                await self._call_barrier("side_effect_committed")
 
             else:
                 raise BrowserError(f"Unsupported action: {action}")
@@ -280,6 +287,15 @@ class BrowserDOMAdapter(InteractionAdapter):
         except Exception as e:
             logger.warning("DOM action %s failed on %s: %s", action, target, e)
             duration_ms = (time.time() - start_time) * 1000
+
+            # Determine final side effect state
+            if isinstance(e, (ElementNotFoundError, AmbiguousTargetError)) or action in ("wait_for", "extract_text"):
+                final_side_effect = SideEffectState.CONFIRMED_FAILURE
+            elif side_effect == SideEffectState.UNKNOWN:
+                final_side_effect = SideEffectState.UNKNOWN
+            else:
+                final_side_effect = SideEffectState.CONFIRMED_FAILURE
+
             return InteractionResult(
                 mode=self.mode,
                 adapter="BrowserDOMAdapter",
@@ -288,7 +304,7 @@ class BrowserDOMAdapter(InteractionAdapter):
                 arguments=args,
                 confidence=0.0,
                 risk=RiskLevel.NORMAL,
-                side_effect_state=SideEffectState.CONFIRMED_FAILURE,
+                side_effect_state=final_side_effect,
                 duration_ms=duration_ms,
                 result=None,
                 error=str(e),

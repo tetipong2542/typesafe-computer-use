@@ -251,6 +251,12 @@ class WorkerDatabase:
 
     def save_event(self, event: TaskEvent) -> int:
         now = time.time()
+        extra = dict(event.extra)
+        if event.selected_mode:
+            extra["selected_mode"] = event.selected_mode
+        if event.fallback_count:
+            extra["fallback_count"] = event.fallback_count
+
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -281,7 +287,7 @@ class WorkerDatabase:
                     event.screenshot_id,
                     event.result,
                     event.error,
-                    json.dumps(event.extra),
+                    json.dumps(extra),
                     now,
                     event.interaction_mode,
                     event.verification_mode,
@@ -332,6 +338,7 @@ class WorkerDatabase:
             events: list[TaskEvent] = []
             for raw_r in cursor.fetchall():
                 r = dict(raw_r)
+                extra_data = json.loads(r.get("extra_json") or "{}")
                 events.append(
                     TaskEvent(
                         event_id=r["event_id"],
@@ -373,7 +380,9 @@ class WorkerDatabase:
                         browser_session_id=r.get("browser_session_id"),
                         page_id=r.get("page_id"),
                         navigation_epoch=r.get("navigation_epoch"),
-                        extra=json.loads(r.get("extra_json") or "{}"),
+                        selected_mode=extra_data.get("selected_mode"),
+                        fallback_count=extra_data.get("fallback_count", 0),
+                        extra=extra_data,
                     )
                 )
             return events

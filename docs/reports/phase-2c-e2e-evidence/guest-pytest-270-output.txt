@@ -1,0 +1,47 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/admin/typesafe-computer-use
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collected 270 items
+
+tests/test_actions.py ....................                               [  7%]
+tests/test_adapters.py ......                                            [  9%]
+tests/test_answer.py ...............                                     [ 15%]
+tests/test_ax.py ...........................                             [ 25%]
+tests/test_browser_dom.py .....                                          [ 27%]
+tests/test_browser_session.py ................                           [ 32%]
+tests/test_config_and_writer.py ...                                      [ 34%]
+tests/test_dates.py .....                                                [ 35%]
+tests/test_db_migration.py ...                                           [ 37%]
+tests/test_decide.py ............                                        [ 41%]
+tests/test_emergency_process.py ..                                       [ 42%]
+tests/test_execution_gate.py .....                                       [ 44%]
+tests/test_execution_gate_race.py .......                                [ 46%]
+tests/test_hybrid_router_e2e.py ......                                   [ 48%]
+tests/test_input_lock.py .....                                           [ 50%]
+tests/test_input_lock_isolation.py .....                                 [ 52%]
+tests/test_navigation_epoch_and_ambiguity.py ...                         [ 53%]
+tests/test_ocr_cache.py ....................................             [ 67%]
+tests/test_openai_writer.py ....                                         [ 68%]
+tests/test_perception.py ...............                                 [ 74%]
+tests/test_policy_gate.py .........                                      [ 77%]
+tests/test_real_browser.py ...                                           [ 78%]
+tests/test_real_browser_delayed_side_effect.py ......                    [ 80%]
+tests/test_sanitization_precision.py ...                                 [ 81%]
+tests/test_shadow_probe_readonly.py .                                    [ 82%]
+tests/test_shadow_router.py ...                                          [ 83%]
+tests/test_task_router_integration.py .                                  [ 83%]
+tests/test_timing.py ...........                                         [ 87%]
+tests/test_untrusted_dom_boundary.py ..                                  [ 88%]
+tests/test_worker_api.py ...........................                     [ 98%]
+tests/test_worker_state.py ....                                          [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/starlette/testclient.py:53
+  /Users/admin/typesafe-computer-use/.venv/lib/python3.13/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 270 passed, 1 warning in 61.23s (0:01:01) ===================

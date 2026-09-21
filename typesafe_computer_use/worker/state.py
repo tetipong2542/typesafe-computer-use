@@ -159,6 +159,8 @@ class TaskEvent:
     browser_session_id: str | None = None
     page_id: str | None = None
     navigation_epoch: int | None = None
+    selected_mode: str | None = None
+    fallback_count: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
