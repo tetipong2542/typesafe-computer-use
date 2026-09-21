@@ -26,6 +26,7 @@ from typesafe_computer_use.adapters import (  # noqa: E402
 )
 from typesafe_computer_use.browser.models import BrowserSessionConfig  # noqa: E402
 from typesafe_computer_use.browser.session import BrowserSessionManager  # noqa: E402
+from typesafe_computer_use.macos import set_input_lock  # noqa: E402
 from typesafe_computer_use.mcp.server import create_webmcp_server  # noqa: E402
 from typesafe_computer_use.worker.gate import ExecutionGate  # noqa: E402
 
@@ -43,6 +44,8 @@ async def main() -> int:
     print("================================================================================")
 
     gate = ExecutionGate.get_instance()
+    gate.open_gate()
+    set_input_lock(False)
     cfg = BrowserSessionConfig(headless=False)
     mgr = BrowserSessionManager(cfg)
 
@@ -57,19 +60,27 @@ async def main() -> int:
         return 1
 
     dom_adapter = BrowserDOMAdapter(session_manager=mgr, execution_gate=gate)
-    mcp_server = create_webmcp_server(session_manager=mgr, dom_adapter=dom_adapter, execution_gate=gate)
+    auth_token = os.environ.get("WORKER_AUTH_TOKEN", "a0fc8f4a999ec1d0d87b3ff9cedfc6d296614bcd529b1589a1c02bfe3e9017e6")
+    mcp_server = create_webmcp_server(session_manager=mgr, dom_adapter=dom_adapter, execution_gate=gate, auth_token=auth_token)
+
+    # 0. Verify unauthenticated rejection
+    print("\n[Auth Check] Verifying unauthenticated tool calls are rejected...")
+    res_unauth = await mcp_server.call_tool("browser_status", {})
+    unauth_text = _extract_text(res_unauth)
+    assert "Authentication required" in unauth_text, f"Expected auth rejection, got: {unauth_text}"
+    print("Universal Authentication PASSED: Unauthenticated calls safely rejected.")
 
     # 1. browser_status
-    print("\n[2/6] Calling browser_status tool...")
-    res_status = await mcp_server.call_tool("browser_status", {})
+    print("\n[2/6] Calling browser_status tool with auth...")
+    res_status = await mcp_server.call_tool("browser_status", {"auth_token": auth_token})
     status_text = _extract_text(res_status)
     print(f"Status Output: {status_text}")
     assert "hybrid_closure.html" in status_text, "Active tab URL mismatch in browser_status"
     print("browser_status tool PASSED.")
 
     # 2. browser_get_dom
-    print("\n[3/6] Calling browser_get_dom tool...")
-    res_dom = await mcp_server.call_tool("browser_get_dom", {"max_elements": 100})
+    print("\n[3/6] Calling browser_get_dom tool with auth...")
+    res_dom = await mcp_server.call_tool("browser_get_dom", {"max_elements": 100, "auth_token": auth_token})
     dom_text = _extract_text(res_dom)
     assert "<untrusted_dom_content>" in dom_text, "Missing untrusted boundary in browser_get_dom"
     assert "Submit Query" in dom_text, "Missing interactive element in DOM extraction"
@@ -77,30 +88,31 @@ async def main() -> int:
     print("browser_get_dom tool PASSED.")
 
     # 3. browser_fill
-    print("\n[4/6] Calling browser_fill tool on #search-input...")
+    print("\n[4/6] Calling browser_fill tool on #search-input with auth...")
     query_text = "WebMCP Automation Query 2026"
-    res_fill = await mcp_server.call_tool("browser_fill", {"target": "#search-input", "text": query_text})
+    res_fill = await mcp_server.call_tool("browser_fill", {"target": "#search-input", "text": query_text, "auth_token": auth_token})
     fill_text = _extract_text(res_fill)
     print(f"Fill Output: {fill_text}")
     assert "confirmed_success" in fill_text, "browser_fill did not achieve confirmed_success"
     print("browser_fill tool PASSED.")
 
     # 4. browser_click
-    print("\n[5/6] Calling browser_click tool on #submit-btn...")
-    res_click = await mcp_server.call_tool("browser_click", {"target": "#submit-btn"})
+    print("\n[5/6] Calling browser_click tool on #submit-btn with auth...")
+    res_click = await mcp_server.call_tool("browser_click", {"target": "#submit-btn", "auth_token": auth_token})
     click_text = _extract_text(res_click)
     print(f"Click Output: {click_text}")
     assert "confirmed_success" in click_text, "browser_click did not achieve confirmed_success"
     print("browser_click tool PASSED.")
 
     # 5. browser_verify
-    print("\n[6/6] Calling browser_verify tool on #status...")
+    print("\n[6/6] Calling browser_verify tool on #status with auth...")
     res_verify = await mcp_server.call_tool(
         "browser_verify",
         {
             "condition": "text_contains",
             "target": "#status",
             "expected_value": f"Submitted: {query_text}",
+            "auth_token": auth_token,
         },
     )
     verify_text = _extract_text(res_verify)
@@ -111,14 +123,14 @@ async def main() -> int:
     # 6. Safety Gate Enforcement Check
     print("\n[Extra Safety] Verifying emergency stop blocks mutating tools immediately...")
     await gate.trigger_emergency_stop()
-    res_blocked = await mcp_server.call_tool("browser_click", {"target": "#submit-btn"})
+    res_blocked = await mcp_server.call_tool("browser_click", {"target": "#submit-btn", "auth_token": auth_token})
     blocked_text = _extract_text(res_blocked)
     assert "Execution gate locked" in blocked_text, "Emergency stop failed to block mutating tool"
     print("Safety Invariant PASSED: Mutating tools blocked by ExecutionGate.")
 
     # Cleanup gate
     gate.open_gate()
-    os.system("rm -f /tmp/typesafe_input.lock >/dev/null 2>&1")
+    set_input_lock(False)
 
     # Disconnect
     await mgr.disconnect(keep_browser_alive=True)

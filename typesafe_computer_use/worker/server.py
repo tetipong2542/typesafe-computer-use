@@ -1,10 +1,8 @@
-"""FastAPI HTTP and SSE Worker Server."""
-
-from __future__ import annotations
-
+import logging
 import os
 import secrets
 import socket
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -12,8 +10,11 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from .db import DEFAULT_DB_PATH, WorkerDatabase
 from .events import EventHub
@@ -57,6 +58,103 @@ policy_engine = PolicyEngine(normal_threshold=DEFAULT_NORMAL_CONFIDENCE_THRESHOL
 service = WorkerService(db=db, event_hub=event_hub, policy_engine=policy_engine)
 
 
+logger = logging.getLogger("typesafe.worker")
+
+ALLOWED_MCP_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "ALLOWED_MCP_ORIGINS",
+        "http://localhost:*,http://127.0.0.1:*,https://localhost:*,https://127.0.0.1:*",
+    ).split(",")
+    if o.strip()
+]
+
+def _is_mcp_origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return True
+    for pattern in ALLOWED_MCP_ORIGINS:
+        if pattern == "*":
+            return True
+        if pattern.endswith(":*"):
+            prefix = pattern[:-2]
+            if origin == prefix or origin.startswith(prefix + ":"):
+                return True
+        elif origin == pattern:
+            return True
+    return False
+
+
+_mcp_rate_limit_records: dict[str, list[float]] = {}
+
+
+class MCPAuthAndSecurityMiddleware(BaseHTTPMiddleware):
+    """Middleware enforcing Origin validation, Bearer token authentication, rate limiting, and audit logging on /mcp routes."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/mcp"):
+            # 1. Validate Origin
+            origin = request.headers.get("origin")
+            if not _is_mcp_origin_allowed(origin):
+                logger.warning("AUDIT MCP: Blocked disallowed origin '%s' from %s", origin, request.client.host if request.client else "unknown")
+                return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"error": "OriginForbidden", "detail": f"Origin '{origin}' is not allowed"})
+
+            # 2. Universal Authentication Check
+            current_token = os.environ.get("WORKER_AUTH_TOKEN", WORKER_AUTH_TOKEN)
+            if current_token:
+                auth_hdr = request.headers.get("authorization", "")
+                x_tok = request.headers.get("x-worker-token", "")
+                token = None
+                if auth_hdr.startswith("Bearer "):
+                    token = auth_hdr[7:].strip()
+                elif x_tok:
+                    token = x_tok.strip()
+
+                if not token or token != current_token:
+                    logger.warning("AUDIT MCP: Unauthorized request to %s from %s", request.url.path, request.client.host if request.client else "unknown")
+                    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"error": "Unauthorized", "detail": "Missing or invalid authorization token"})
+
+            # 3. Rate Limiting (120 req/min)
+            client_ip = request.client.host if request.client else "127.0.0.1"
+            now = time.time()
+            ts_list = [t for t in _mcp_rate_limit_records.get(client_ip, []) if now - t < 60.0]
+            if len(ts_list) >= 120:
+                logger.warning("AUDIT MCP: Rate limit exceeded for %s", client_ip)
+                return JSONResponse(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content={"error": "RateLimitExceeded", "detail": "Too many requests to MCP endpoint"})
+            ts_list.append(now)
+            _mcp_rate_limit_records[client_ip] = ts_list
+
+            # 4. Audit Log Execution
+            t0 = time.time()
+            response = await call_next(request)
+            dur = (time.time() - t0) * 1000
+            logger.info("AUDIT MCP: method=%s path=%s client=%s status=%s duration_ms=%.1f", request.method, request.url.path, client_ip, response.status_code, dur)
+            return response
+
+        return await call_next(request)
+
+
+# Prepare MCP Gateway if enabled
+_app_stream = None
+_app_sse = None
+_mcp_lifespan_ctx = None
+
+if os.environ.get("WEBMCP_ENABLED", "true").lower() in ("true", "1", "yes"):
+    from typesafe_computer_use.mcp import create_webmcp_server
+
+    _dom_adapter = getattr(service.router, "dom_adapter", None)
+    _session_mgr = getattr(_dom_adapter, "session_manager", None)
+    mcp_server = create_webmcp_server(
+        session_manager=_session_mgr,
+        dom_adapter=_dom_adapter,
+        execution_gate=ExecutionGate.get_instance(),
+        auth_token=WORKER_AUTH_TOKEN,
+    )
+    _sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    _app_stream = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True, transport_security=_sec)
+    _app_sse = mcp_server.sse_app(sse_path="/", message_path="/messages/", transport_security=_sec)
+    _mcp_lifespan_ctx = _app_stream.router.lifespan_context
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle startup: restore input lock if needed and recover interrupted tasks."""
@@ -70,7 +168,12 @@ async def lifespan(app: FastAPI):
     interrupted = db.recover_interrupted_tasks()
     if interrupted:
         print(f"[Worker Startup] Recovered {len(interrupted)} interrupted task(s): {', '.join(interrupted)}")
-    yield
+
+    if _mcp_lifespan_ctx:
+        async with _mcp_lifespan_ctx(app):
+            yield
+    else:
+        yield
 
 
 app = FastAPI(
@@ -87,19 +190,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MCPAuthAndSecurityMiddleware)
 
-# Optional WebMCP Model Context Protocol SSE mount
-if os.environ.get("WEBMCP_ENABLED", "true").lower() in ("true", "1", "yes"):
-    from typesafe_computer_use.mcp import create_webmcp_server
-
-    _dom_adapter = getattr(service.router, "dom_adapter", None)
-    _session_mgr = getattr(_dom_adapter, "session_manager", None)
-    mcp_server = create_webmcp_server(
-        session_manager=_session_mgr,
-        dom_adapter=_dom_adapter,
-        execution_gate=ExecutionGate.get_instance(),
-    )
-    app.mount("/mcp", mcp_server.sse_app())
+if _app_stream is not None:
+    app.mount("/mcp/legacy/sse", _app_sse)
+    app.mount("/mcp/sse", _app_sse)
+    app.mount("/mcp", _app_stream)
 
 
 def verify_auth_token(

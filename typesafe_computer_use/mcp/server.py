@@ -33,9 +33,9 @@ def create_webmcp_server(
     session_manager: BrowserSessionManager | None = None,
     dom_adapter: BrowserDOMAdapter | None = None,
     execution_gate: ExecutionGate | None = None,
+    auth_token: str | None = None,
     name: str = "typesafe-webmcp",
 ) -> MCPServer:
-    """Create and configure an MCPServer instance exposing browser automation tools."""
     gate = execution_gate or ExecutionGate.get_instance()
     mgr = session_manager or BrowserSessionManager()
     adapter = dom_adapter or BrowserDOMAdapter(session_manager=mgr, execution_gate=gate)
@@ -46,8 +46,22 @@ def create_webmcp_server(
         description="TypeSafe WebMCP server for verified, safe browser interaction via Playwright CDP.",
     )
 
+    def _verify_auth(provided: str | None) -> bool:
+        if not auth_token:
+            return True
+        return bool(provided and provided.strip() == auth_token.strip())
+
     @server.tool(name="browser_navigate", description="Navigate active browser tab to specified URL.")
-    async def browser_navigate(url: str) -> BrowserToolResult:
+    async def browser_navigate(url: str, auth_token: str | None = None) -> BrowserToolResult:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_navigate rejected: invalid or missing auth_token")
+            return BrowserToolResult(
+                success=False,
+                error="Authentication required: invalid or missing auth_token",
+                side_effect_state=SideEffectState.NOT_STARTED.value,
+            )
+
         try:
             await gate.check_gate_or_raise()
         except Exception as e:
@@ -66,6 +80,12 @@ def create_webmcp_server(
         )
         res = await adapter.execute(req)
         epoch = mgr.get_navigation_epoch()
+        logger.info(
+            "AUDIT MCP browser_navigate completed: target=%s success=%s duration_ms=%.1f",
+            url,
+            res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
+            (time.time() - t0) * 1000,
+        )
         return BrowserToolResult(
             success=res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
             data=res.result,
@@ -80,7 +100,17 @@ def create_webmcp_server(
         role: str | None = None,
         name: str | None = None,
         test_id: str | None = None,
+        auth_token: str | None = None,
     ) -> BrowserToolResult:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_click rejected: invalid or missing auth_token")
+            return BrowserToolResult(
+                success=False,
+                error="Authentication required: invalid or missing auth_token",
+                side_effect_state=SideEffectState.NOT_STARTED.value,
+            )
+
         try:
             await gate.check_gate_or_raise()
         except Exception as e:
@@ -107,6 +137,12 @@ def create_webmcp_server(
         )
         res = await adapter.execute(req)
         epoch = mgr.get_navigation_epoch()
+        logger.info(
+            "AUDIT MCP browser_click completed: target=%s success=%s duration_ms=%.1f",
+            target,
+            res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
+            (time.time() - t0) * 1000,
+        )
         return BrowserToolResult(
             success=res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
             data=res.result,
@@ -116,7 +152,16 @@ def create_webmcp_server(
         )
 
     @server.tool(name="browser_fill", description="Fill text into an input or textarea element.")
-    async def browser_fill(target: str, text: str) -> BrowserToolResult:
+    async def browser_fill(target: str, text: str, auth_token: str | None = None) -> BrowserToolResult:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_fill rejected: invalid or missing auth_token")
+            return BrowserToolResult(
+                success=False,
+                error="Authentication required: invalid or missing auth_token",
+                side_effect_state=SideEffectState.NOT_STARTED.value,
+            )
+
         try:
             await gate.check_gate_or_raise()
         except Exception as e:
@@ -135,6 +180,12 @@ def create_webmcp_server(
         )
         res = await adapter.execute(req)
         epoch = mgr.get_navigation_epoch()
+        logger.info(
+            "AUDIT MCP browser_fill completed: target=%s success=%s duration_ms=%.1f",
+            target,
+            res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
+            (time.time() - t0) * 1000,
+        )
         return BrowserToolResult(
             success=res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS,
             data=res.result,
@@ -144,11 +195,24 @@ def create_webmcp_server(
         )
 
     @server.tool(name="browser_get_dom", description="Extract sanitized, bounded DOM representation wrapped in untrusted boundary.")
-    async def browser_get_dom(max_elements: int = 150, max_depth: int = 6) -> str:
+    async def browser_get_dom(
+        max_elements: int = 150,
+        max_depth: int = 6,
+        redact_sensitive: bool = True,
+        auth_token: str | None = None,
+    ) -> str:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_get_dom rejected: invalid or missing auth_token")
+            return "<error>Authentication required: invalid or missing auth_token</error>"
+
         try:
             page = await mgr.get_active_page()
-            return await adapter.extract_sanitized_dom(page, max_elements=max_elements, max_depth=max_depth)
+            dom_text = await adapter.extract_sanitized_dom(page, max_elements=max_elements, max_depth=max_depth)
+            logger.info("AUDIT MCP browser_get_dom completed: length=%d duration_ms=%.1f", len(dom_text), (time.time() - t0) * 1000)
+            return dom_text
         except Exception as e:
+            logger.error("AUDIT MCP browser_get_dom failed: %s", e)
             return f"<error>{e}</error>"
 
     @server.tool(name="browser_verify", description="Perform read-only DOM verification without triggering mutations.")
@@ -156,7 +220,17 @@ def create_webmcp_server(
         condition: str,
         target: str,
         expected_value: str | None = None,
+        auth_token: str | None = None,
     ) -> BrowserToolResult:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_verify rejected: invalid or missing auth_token")
+            return BrowserToolResult(
+                success=False,
+                error="Authentication required: invalid or missing auth_token",
+                side_effect_state=SideEffectState.NOT_STARTED.value,
+            )
+
         exp = VerificationExpectation(
             condition=condition,
             target=target,
@@ -164,6 +238,7 @@ def create_webmcp_server(
         )
         try:
             v_res = await adapter.verify(exp)
+            logger.info("AUDIT MCP browser_verify completed: verified=%s duration_ms=%.1f", v_res.verified, (time.time() - t0) * 1000)
             return BrowserToolResult(
                 success=v_res.verified,
                 data=v_res.evidence,
@@ -172,6 +247,7 @@ def create_webmcp_server(
                 navigation_epoch=mgr.get_navigation_epoch(),
             )
         except Exception as e:
+            logger.error("AUDIT MCP browser_verify error: %s", e)
             return BrowserToolResult(
                 success=False,
                 error=str(e),
@@ -179,7 +255,21 @@ def create_webmcp_server(
             )
 
     @server.tool(name="browser_status", description="Query active Chrome tab metadata, CDP connection health, and lock status.")
-    async def browser_status() -> BrowserStatusResult:
+    async def browser_status(auth_token: str | None = None) -> BrowserStatusResult:
+        t0 = time.time()
+        if not _verify_auth(auth_token):
+            logger.warning("AUDIT MCP browser_status rejected: invalid or missing auth_token")
+            return BrowserStatusResult(
+                url="",
+                title="",
+                is_connected=False,
+                navigation_epoch=0,
+                cdp_port=None,
+                execution_gate_locked=True,
+                authenticated=False,
+                error="Authentication required: invalid or missing auth_token",
+            )
+
         is_conn = mgr.is_connected
         epoch = mgr.get_navigation_epoch()
         url = ""
@@ -199,6 +289,7 @@ def create_webmcp_server(
         except Exception:
             gate_locked = True
 
+        logger.info("AUDIT MCP browser_status completed: duration_ms=%.1f", (time.time() - t0) * 1000)
         return BrowserStatusResult(
             url=url,
             title=title,
@@ -206,6 +297,8 @@ def create_webmcp_server(
             navigation_epoch=epoch,
             cdp_port=cdp_port,
             execution_gate_locked=gate_locked,
+            authenticated=True,
+            error=None,
         )
 
     return server

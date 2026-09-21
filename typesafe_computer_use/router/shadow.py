@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,10 +49,12 @@ class ShadowInteractionRouter:
         self,
         visual_adapter: VisualComputerUseAdapter | None = None,
         dom_adapter: BrowserDOMAdapter | None = None,
+        native_webmcp_adapter: Any | None = None,
         mode: RouterMode | None = None,
     ) -> None:
         self.visual_adapter = visual_adapter or VisualComputerUseAdapter()
         self.dom_adapter = dom_adapter or BrowserDOMAdapter()
+        self.native_webmcp_adapter = native_webmcp_adapter
         self._configured_mode = mode
         self._fallback_count: int = 0
 
@@ -187,6 +190,96 @@ class ShadowInteractionRouter:
             or str(request.target).startswith("offscreen:")
         )
 
+        fallback_from_mcp = False
+        mcp_fallback_reason: str | None = None
+
+        # Check Native WebMCP Feature Flag: WEBMCP_NATIVE_MODE ("disabled", "shadow", "active")
+        webmcp_mode = os.environ.get("WEBMCP_NATIVE_MODE", "disabled").lower().strip()
+        if (
+            webmcp_mode in ("active", "shadow")
+            and self.native_webmcp_adapter is not None
+            and not is_desktop_os
+        ):
+            webmcp_probe = await self.native_webmcp_adapter.probe(request)
+            if webmcp_probe.available:
+                tool_name = (webmcp_probe.metadata or {}).get("tool_name", request.target)
+                if webmcp_mode == "active":
+                    webmcp_res = await self.native_webmcp_adapter.execute(request)
+
+                    if webmcp_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS:
+                        decision = ShadowDecision(
+                            rollout_mode=RouterMode.HYBRID,
+                            executed_mode=InteractionMode.WEBMCP,
+                            shadow_mode=None,
+                            shadow_target=tool_name,
+                            shadow_confidence=webmcp_res.confidence,
+                            shadow_reason="WebMCP in-page tool execution confirmed success",
+                            shadow_match_result="match",
+                            router_reason=f"WebMCP execution: invoked in-page tool '{tool_name}'",
+                            selected_mode=InteractionMode.WEBMCP,
+                            fallback_from=None,
+                            fallback_to=None,
+                            fallback_reason=None,
+                            fallback_count=self._fallback_count,
+                            metadata={
+                                "tool_name": tool_name,
+                                "origin": (webmcp_probe.metadata or {}).get("origin"),
+                                "schema_hash": (webmcp_probe.metadata or {}).get("schema_hash"),
+                            },
+                        )
+                        return webmcp_res, decision
+
+                    elif webmcp_res.side_effect_state == SideEffectState.NOT_STARTED:
+                        decision = ShadowDecision(
+                            rollout_mode=RouterMode.HYBRID,
+                            executed_mode=InteractionMode.WEBMCP,
+                            shadow_mode=None,
+                            shadow_target=tool_name,
+                            shadow_confidence=webmcp_res.confidence,
+                            shadow_reason=webmcp_res.error or "WebMCP consequential tool awaiting approval",
+                            shadow_match_result="awaiting_approval",
+                            router_reason=f"WebMCP execution halted: {webmcp_res.error}",
+                            selected_mode=InteractionMode.WEBMCP,
+                            fallback_from=None,
+                            fallback_to=None,
+                            fallback_reason=None,
+                            fallback_count=self._fallback_count,
+                            metadata={"requires_approval": True, "tool_name": tool_name},
+                        )
+                        return webmcp_res, decision
+
+                    elif webmcp_res.side_effect_state == SideEffectState.CONFIRMED_FAILURE:
+                        fallback_from_mcp = True
+                        mcp_fallback_reason = webmcp_res.error or f"WebMCP tool '{tool_name}' failed cleanly before mutation"
+                        self._fallback_count += 1
+                        logger.info("WebMCP failed cleanly (%s). Falling back to Tier 2: Browser DOM.", mcp_fallback_reason)
+
+                    else:
+                        # SideEffectState.UNKNOWN: Ambiguous in-flight mutation state!
+                        logger.warning(
+                            "WebMCP tool '%s' resulted in side_effect_state=UNKNOWN (%s). "
+                            "Automatic retry and fallback are strictly forbidden to prevent duplicate writes.",
+                            tool_name,
+                            webmcp_res.error,
+                        )
+                        decision = ShadowDecision(
+                            rollout_mode=RouterMode.HYBRID,
+                            executed_mode=InteractionMode.WEBMCP,
+                            shadow_mode=None,
+                            shadow_target=tool_name,
+                            shadow_confidence=0.0,
+                            shadow_reason=f"WebMCP in-flight failure: {webmcp_res.error}",
+                            shadow_match_result="ambiguous_unknown",
+                            router_reason="Unknown side-effect state: halts execution to protect user safety.",
+                            selected_mode=InteractionMode.WEBMCP,
+                            fallback_from=None,
+                            fallback_to=None,
+                            fallback_reason="side_effect_state=UNKNOWN; fallback forbidden",
+                            fallback_count=self._fallback_count,
+                            metadata={"unknown_state": True, "tool_name": tool_name},
+                        )
+                        return webmcp_res, decision
+
         selected_mode = InteractionMode.VISUAL_GROUNDED
         router_reason = ""
         dom_available = False
@@ -267,9 +360,9 @@ class ShadowInteractionRouter:
                     shadow_match_result="match",
                     router_reason=f"Hybrid execution: executed via {InteractionMode.BROWSER_DOM}",
                     selected_mode=InteractionMode.BROWSER_DOM,
-                    fallback_from=None,
-                    fallback_to=None,
-                    fallback_reason=None,
+                    fallback_from=InteractionMode.WEBMCP if fallback_from_mcp else None,
+                    fallback_to=InteractionMode.BROWSER_DOM if fallback_from_mcp else None,
+                    fallback_reason=mcp_fallback_reason if fallback_from_mcp else None,
                     fallback_count=self._fallback_count,
                     metadata={"dom_action": dom_action, "dom_target": dom_target},
                 )

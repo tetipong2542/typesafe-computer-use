@@ -1,6 +1,7 @@
 """Unit and integration tests for WebMCP Server and tools."""
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -207,3 +208,109 @@ def test_webmcp_browser_status_tool():
         assert "50868" in text
 
     asyncio.run(_run())
+
+
+def test_webmcp_auth_enforcement_on_all_tools():
+    """Verify that EVERY MCP tool strictly enforces authentication when configured."""
+    mgr = MagicMock(spec=BrowserSessionManager)
+    mgr.is_connected = True
+    mgr.get_navigation_epoch = MagicMock(return_value=1)
+    page_mock = MagicMock()
+    page_mock.url = "https://example.com"
+    page_mock.title = AsyncMock(return_value="Example")
+    mgr.get_active_page = AsyncMock(return_value=page_mock)
+
+    adapter = MagicMock(spec=BrowserDOMAdapter)
+    adapter.extract_sanitized_dom = AsyncMock(return_value="<untrusted_dom_content>test</untrusted_dom_content>")
+    adapter.verify = AsyncMock(return_value=VerificationResult(verified=True, mode="browser_dom", reason="ok", evidence={}))
+    adapter.execute = AsyncMock(
+        return_value=InteractionResult(
+            mode="browser_dom",
+            adapter="BrowserDOMAdapter",
+            action="click",
+            target="#btn",
+            arguments={},
+            confidence=0.9,
+            risk=RiskLevel.NORMAL,
+            side_effect_state=SideEffectState.CONFIRMED_SUCCESS,
+            duration_ms=10.0,
+            result={},
+            error=None,
+        )
+    )
+
+    secret = "scoped_test_token_xyz"
+    server = create_webmcp_server(session_manager=mgr, dom_adapter=adapter, auth_token=secret)
+
+    async def _run():
+        # 1. Unauthenticated calls MUST fail on every tool
+        res_status = await server.call_tool("browser_status", {})
+        assert "Authentication required" in _get_tool_text(res_status)
+
+        res_dom = await server.call_tool("browser_get_dom", {})
+        assert "Authentication required" in _get_tool_text(res_dom)
+
+        res_nav = await server.call_tool("browser_navigate", {"url": "https://example.com"})
+        assert "Authentication required" in _get_tool_text(res_nav)
+
+        res_click = await server.call_tool("browser_click", {"target": "#btn"})
+        assert "Authentication required" in _get_tool_text(res_click)
+
+        res_fill = await server.call_tool("browser_fill", {"target": "#input", "text": "abc"})
+        assert "Authentication required" in _get_tool_text(res_fill)
+
+        res_verify = await server.call_tool("browser_verify", {"condition": "visible", "target": "#btn"})
+        assert "Authentication required" in _get_tool_text(res_verify)
+
+        # Ensure adapter was NEVER touched during unauthenticated calls
+        assert adapter.execute.call_count == 0
+        assert adapter.extract_sanitized_dom.call_count == 0
+
+        # 2. Authenticated calls with valid token succeed
+        res_auth_status = await server.call_tool("browser_status", {"auth_token": secret})
+        assert "https://example.com" in _get_tool_text(res_auth_status)
+
+        res_auth_dom = await server.call_tool("browser_get_dom", {"auth_token": secret})
+        assert "<untrusted_dom_content>" in _get_tool_text(res_auth_dom)
+
+        res_auth_click = await server.call_tool("browser_click", {"target": "#btn", "auth_token": secret})
+        assert "confirmed_success" in _get_tool_text(res_auth_click)
+        assert adapter.execute.call_count == 1
+
+    asyncio.run(_run())
+
+
+def test_mcp_middleware_security_and_origin_http():
+    """Verify HTTP middleware enforces Bearer token, rejects evil Origin, and passes valid requests."""
+    from starlette.testclient import TestClient
+
+    from typesafe_computer_use.worker.server import app
+
+    with TestClient(app) as client:
+        # 1. Missing auth returns 401
+        r_no_auth = client.post("/mcp/", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        assert r_no_auth.status_code == 401
+        assert "Unauthorized" in r_no_auth.text
+
+        # 2. Disallowed Origin returns 403
+        r_bad_origin = client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+            headers={"Authorization": f"Bearer {app.extra.get('WORKER_AUTH_TOKEN', '') or 'test'}", "Origin": "https://malicious-attacker.com"},
+        )
+        assert r_bad_origin.status_code == 403
+        assert "OriginForbidden" in r_bad_origin.text
+
+        # 3. Allowed Origin + Valid Bearer token succeeds
+        valid_token = os.environ.get("WORKER_AUTH_TOKEN", "")
+        if valid_token:
+            r_ok = client.post(
+                "/mcp/",
+                json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+                headers={
+                    "Authorization": f"Bearer {valid_token}",
+                    "Origin": "http://localhost:3000",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            assert r_ok.status_code == 200

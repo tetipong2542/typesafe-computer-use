@@ -872,6 +872,9 @@ class WorkerService:
                             "side_effect_state": res.side_effect_state.value,
                             "duration_ms": res.duration_ms,
                             "adapter": res.adapter,
+                            "tool_name": shadow_dec.metadata.get("tool_name"),
+                            "origin": shadow_dec.metadata.get("origin"),
+                            "schema_hash": shadow_dec.metadata.get("schema_hash"),
                         },
                     )
 

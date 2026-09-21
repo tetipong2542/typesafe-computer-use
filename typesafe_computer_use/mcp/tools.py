@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class BrowserNavigateInput(BaseModel):
     url: str = Field(..., description="Target HTTP or HTTPS URL to navigate active browser tab to")
+    auth_token: str | None = Field(None, description="Optional worker authentication token")
 
 
 class BrowserClickInput(BaseModel):
@@ -16,16 +17,20 @@ class BrowserClickInput(BaseModel):
     role: str | None = Field(None, description="Accessible role (e.g. 'button', 'link', 'checkbox')")
     name: str | None = Field(None, description="Accessible name or label matching the role")
     test_id: str | None = Field(None, description="Explicit data-testid attribute value")
+    auth_token: str | None = Field(None, description="Optional worker authentication token")
 
 
 class BrowserFillInput(BaseModel):
     target: str = Field(..., description="Input element selector, placeholder, or accessible label")
     text: str = Field(..., description="Text content to fill into target element")
+    auth_token: str | None = Field(None, description="Optional worker authentication token")
 
 
 class BrowserGetDomInput(BaseModel):
     max_elements: int = Field(150, ge=1, le=500, description="Maximum number of DOM elements to summarize")
     max_depth: int = Field(6, ge=1, le=12, description="Maximum element tree traversal depth")
+    redact_sensitive: bool = Field(True, description="Whether to redact passwords, tokens, and credit cards")
+    auth_token: str | None = Field(None, description="Optional worker authentication token")
 
 
 class BrowserVerifyInput(BaseModel):
@@ -35,6 +40,7 @@ class BrowserVerifyInput(BaseModel):
     )
     target: str = Field(..., description="Target selector, element locator, or URL substring")
     expected_value: str | None = Field(None, description="Expected inner text or attribute value")
+    auth_token: str | None = Field(None, description="Optional worker authentication token")
 
 
 class BrowserStatusResult(BaseModel):
@@ -44,6 +50,8 @@ class BrowserStatusResult(BaseModel):
     navigation_epoch: int
     cdp_port: int | None
     execution_gate_locked: bool
+    authenticated: bool = True
+    error: str | None = None
 
 
 class BrowserToolResult(BaseModel):

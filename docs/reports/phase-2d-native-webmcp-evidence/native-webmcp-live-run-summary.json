@@ -1,0 +1,62 @@
+{
+  "discovered_tools": [
+    {
+      "name": "search_products",
+      "source": "imperative",
+      "consequential": false,
+      "hash": "ce7745922cb321a0"
+    },
+    {
+      "name": "add_to_cart",
+      "source": "imperative",
+      "consequential": false,
+      "hash": "22f546c9f3e3f55a"
+    },
+    {
+      "name": "update_quantity",
+      "source": "imperative",
+      "consequential": false,
+      "hash": "335b79ca2e24d7df"
+    },
+    {
+      "name": "checkout",
+      "source": "imperative",
+      "consequential": true,
+      "hash": "4bdf34ceab1954d5"
+    },
+    {
+      "name": "subscribe_newsletter",
+      "source": "declarative_form",
+      "consequential": false,
+      "hash": "540cbcb88af917d1"
+    }
+  ],
+  "step_2_search": {
+    "executed_mode": "webmcp",
+    "side_effect_state": "confirmed_success",
+    "status_dom": "Status: Searched for 'MacBook Pro M3'"
+  },
+  "step_3_add_to_cart": {
+    "executed_mode": "webmcp",
+    "cart_count": "2",
+    "cart_items": "prod_macbook: 2 unit(s)"
+  },
+  "step_4_update_quantity": {
+    "executed_mode": "webmcp",
+    "cart_count": "5"
+  },
+  "step_5_consequential_checkout": {
+    "unapproved_halted": true,
+    "approved_success": true,
+    "order_status": "Order Confirmed: ORD-589406 shipped to 1 Infinite Loop, Cupertino, CA"
+  },
+  "step_6_fallback_missing_tool": {
+    "executed_mode": "browser_dom",
+    "dom_result": "Clicked Successfully"
+  },
+  "step_7_non_webmcp_site": {
+    "executed_mode": "browser_dom",
+    "status": "Submitted:"
+  },
+  "timestamp": "2026-09-21T04:51:07Z"
+}
