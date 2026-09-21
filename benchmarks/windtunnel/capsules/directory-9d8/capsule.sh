@@ -5,7 +5,7 @@ CAPSULE_CONFIG_PATH=capsule.yaml
 source "$ROOT/harness/lib/site-adapter.sh"
 capsule_config_load
 
-CAPSULE_HEALTH_TIMEOUT_SECONDS=120
+CAPSULE_HEALTH_TIMEOUT_SECONDS=180
 CAPSULE_BASELINE_EXCLUDES=(local.db)
 CAPSULE_FIXTURE_HASHES_JSON=$(capsule_hash_file_map \
   database "$ROOT/fixtures/directory-9d8/init-db.mjs" \
