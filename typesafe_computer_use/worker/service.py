@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import subprocess
 import threading
@@ -59,6 +60,7 @@ class TaskController:
         self.emergency_stopped: bool = False
         self.process: subprocess.Popen | None = None
         self.exit_code: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def request_pause(self) -> None:
         self._pause_event.clear()
@@ -142,17 +144,35 @@ class WorkerService:
         self._threads: dict[str, threading.Thread] = {}
         self._event_counter = 0
 
+    def _get_or_create_loop(self, controller: TaskController | None = None) -> asyncio.AbstractEventLoop:
+        """Resolve or initialize a dedicated persistent event loop for worker task execution."""
+        if controller and controller._loop and not controller._loop.is_closed():
+            return controller._loop
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+                if not loop.is_closed():
+                    if controller:
+                        controller._loop = loop
+                    return loop
+            except RuntimeError:
+                pass
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            if controller:
+                controller._loop = loop
+            return loop
+
     def _route_and_execute_sync(
         self,
         request: InteractionRequest,
         expectation: VerificationExpectation | None = None,
+        controller: TaskController | None = None,
     ) -> tuple[InteractionResult, ShadowDecision]:
         """Synchronous wrapper for routing and executing actions via ShadowInteractionRouter."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-
+        loop = self._get_or_create_loop(controller)
         if loop.is_running():
             future = asyncio.run_coroutine_threadsafe(
                 self.router.route_and_execute(request, expectation),
@@ -161,16 +181,16 @@ class WorkerService:
             return future.result(timeout=15.0)
         return loop.run_until_complete(self.router.route_and_execute(request, expectation))
 
-    def _verify_sync(self, expectation: VerificationExpectation) -> Any | None:
+    def _verify_sync(
+        self,
+        expectation: VerificationExpectation,
+        controller: TaskController | None = None,
+    ) -> Any | None:
         """Synchronous wrapper for verifying DOM state from worker threads."""
         if not hasattr(self.router, "dom_adapter") or not hasattr(self.router.dom_adapter, "verify"):
             return None
         try:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-
+            loop = self._get_or_create_loop(controller)
             if loop.is_running():
                 future = asyncio.run_coroutine_threadsafe(
                     self.router.dom_adapter.verify(expectation),
@@ -548,6 +568,10 @@ class WorkerService:
         out_dir = self.base_dir / "runs" / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        controller._loop = loop
+
         log = Log(out_dir / "run.log")
         log(f"Worker task {task_id} (run {run_id}) started for goal: {task.goal!r}")
 
@@ -796,7 +820,7 @@ class WorkerService:
                                     "app": screen.app,
                                 },
                             )
-                            res, shadow_dec = self._route_and_execute_sync(req)
+                            res, shadow_dec = self._route_and_execute_sync(req, controller=controller)
                             what = str(res.result)
                         finally:
                             controller.is_action_in_progress = False
@@ -866,7 +890,8 @@ class WorkerService:
                                 VerificationExpectation(
                                     condition="element_present",
                                     target=target_text or "",
-                                )
+                                ),
+                                controller=controller,
                             )
                             verified = v_res.verified if v_res else False
 
@@ -923,6 +948,9 @@ class WorkerService:
             import traceback
             log(f"Worker task error: {e}\n{traceback.format_exc()}")
         finally:
+            if hasattr(controller, "_loop") and controller._loop and not controller._loop.is_closed():
+                with contextlib.suppress(Exception):
+                    controller._loop.close()
             if not controller.emergency_stopped and not controller.is_takeover:
                 macos.set_input_lock(False)
             final_state = TaskState.SUCCEEDED if outcome in ("done", "succeeded") else TaskState.STOPPED

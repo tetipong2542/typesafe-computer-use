@@ -1,0 +1,19 @@
+{
+  "task_id": "task_20260921-035641_627bc3",
+  "goal": "Click the Submit Query button on the webpage, then click the Apple menu",
+  "state": "stopped",
+  "created_at": 1789963001.285079,
+  "updated_at": 1789963006.338192,
+  "run_id": "run_20260921-035641_5e0ce70f",
+  "current_step": 2,
+  "outcome": "step limit",
+  "error": null,
+  "config": {
+    "act": true,
+    "steps": 2,
+    "min_confidence": 0.8,
+    "delay": 1.0,
+    "browser": "Google Chrome"
+  },
+  "latest_screenshot_id": "step-002.png"
+}

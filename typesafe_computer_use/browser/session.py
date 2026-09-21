@@ -54,10 +54,35 @@ class BrowserSessionManager:
         self._lock_fd: int | None = None
         self._owns_process: bool = False
         self._attached_pid: int | None = None
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+
+    def _ensure_loop_resources(self) -> None:
+        """Ensure asyncio primitives and Playwright handles match the currently running event loop."""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if self._bound_loop is None:
+            self._bound_loop = current_loop
+            self._lock = asyncio.Lock()
+        elif self._bound_loop is not current_loop:
+            self._bound_loop = current_loop
+            self._lock = asyncio.Lock()
+            # Invalidate Playwright handles bound to a prior event loop
+            self._playwright = None
+            self._browser = None
+            self._context = None
+            self._active_page = None
 
     @property
     def is_connected(self) -> bool:
         """Check if CDP connection is active and responsive."""
+        try:
+            current_loop = asyncio.get_running_loop()
+            if self._bound_loop is not None and self._bound_loop is not current_loop:
+                return False
+        except RuntimeError:
+            pass
         return self._browser is not None and self._browser.is_connected()
 
     @property
@@ -79,6 +104,7 @@ class BrowserSessionManager:
 
     async def get_active_page(self, page_id: str | None = None) -> Page:
         """Get or resolve active page deterministically. Raises AmbiguousPageError if ambiguous."""
+        self._ensure_loop_resources()
         async with self._lock:
             if not self.is_connected:
                 await self._connect_internal()
@@ -172,6 +198,8 @@ class BrowserSessionManager:
 
     def _acquire_profile_lock(self, non_blocking: bool = True) -> None:
         """Acquire filesystem lock on worker profile directory to prevent concurrent worker races."""
+        if self._lock_fd is not None:
+            return
         self.config.user_data_dir.mkdir(parents=True, exist_ok=True)
         try:
             self._lock_fd = os.open(str(self._lock_file), os.O_CREAT | os.O_RDWR, 0o600)
@@ -581,6 +609,7 @@ class BrowserSessionManager:
 
     async def disconnect(self, keep_browser_alive: bool = True) -> None:
         """Gracefully disconnect Playwright CDP client, optionally leaving Chrome process running."""
+        self._ensure_loop_resources()
         async with self._lock:
             if self._browser:
                 try:
