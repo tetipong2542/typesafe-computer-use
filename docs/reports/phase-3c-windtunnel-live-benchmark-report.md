@@ -30,9 +30,9 @@ In adherence to strict scientific rigor and transparency, we disclose both 36-at
 | **Valid Passes (Excl. Infra)**| **20 / 32 (62.5%)** | **33 / 34 (97.1%)** | +34.6% valid pass rate |
 | **Combinations Solved** | **7 / 12 (58.3%)** | **11 / 12 (91.7%)** | +4 combinations solved |
 | **`ts-webmcp-native`** | **0 / 9 (0.0%)** | **9 / 9 (100.0%)** | `native-webmcp-unsupported` in Run 1 $\rightarrow$ Native Blink C++ active in Run 2 |
-| **`ts-browser-dom`** | **6 / 9 (66.7%)** | **6 / 9 (66.7%)** | 6/7 valid passed (1 answer predicate failure on detail) |
+| **`ts-browser-dom`** | **7 / 9 (77.8%)** | **6 / 9 (66.7%)** | Run 1: 7/9 passes (2 answer failures on detail, 0 infra) $\rightarrow$ Run 2: 6/9 passes (6/7 valid, 2 cold-start infra resets, 1 detail answer failure) |
 | **`ts-visual`** | **5 / 9 (55.6%)** (4 reset timeouts) | **9 / 9 (100.0%)** (0 infra timeouts) | 180s health check eliminated Next.js reset timeouts |
-| **`ts-hybrid-auto`** | **9 / 9 (100.0%)** (routed to DOM) | **9 / 9 (100.0%)** (routed to WebMCP) | Run 1 cleanly fell back to DOM; Run 2 leveraged WebMCP directly |
+| **`ts-hybrid-auto`** | **8 / 9 (88.9%)** (routed to DOM) | **9 / 9 (100.0%)** (routed to WebMCP) | Run 1 fell back to DOM (8/9 passes, 1 detail answer failure); Run 2 leveraged WebMCP directly (9/9 passes, 100%) |
 
 ### Root Cause of Run 1 WebMCP Failure:
 - Run 1 was invoked in a subshell without exporting `WT_CHROME` and `WT_CHROME_ARGS`.
