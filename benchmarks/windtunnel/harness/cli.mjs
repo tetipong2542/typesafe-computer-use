@@ -275,7 +275,7 @@ export async function runBenchmark(argv, {
     }
   }
   if (abortedReason) log(`Flight aborted — artifact is INCOMPLETE and must not enter the canonical set: ${abortedReason}`);
-  const outputDir = writeReport({ rows, verdicts, capsules, options: { ...options, aborted: abortedReason || undefined, fake: env.WT_FAKE_LIFECYCLE === "1", label: options.label ?? `${options.sites}-${options.preset}`, model: [...new Set(plan.runs.map(({ method }) => method.model))].join(","), armModels: Object.fromEntries(plan.runs.map(({ method }) => [method.id, method.model])) }, outputRoot });
+  const outputDir = writeReport({ rows, verdicts, capsules, options: { ...options, aborted: abortedReason || undefined, fake: env.WT_FAKE_LIFECYCLE === "1", label: options.label ?? `${options.sites}-${options.preset}`, model: [...new Set(plan.runs.map(({ method }) => method.model))].join(","), armModels: Object.fromEntries(plan.runs.map(({ method }) => [method.id, method.model])), chrome_binary: env.WT_CHROME ?? null, chrome_args: env.WT_CHROME_ARGS ?? null }, outputRoot });
   log(`Report: ${path.join(outputDir, "report.md")}`);
   return { rows, verdicts, capsules, outputDir, options };
 }

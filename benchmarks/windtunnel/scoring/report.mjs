@@ -25,12 +25,20 @@ function hashes() {
 
 export function writeReport({ rows, verdicts, options, capsules = [], outputRoot = path.resolve(import.meta.dirname, "../results") }) {
   const hashesForRun = hashes();
-  options = { ...options, git_revision: provenance(), task_set_hash: hashesForRun.taskSet, goldens_hash: hashesForRun.goldens };
+  options = {
+    ...options,
+    git_revision: provenance(),
+    task_set_hash: hashesForRun.taskSet,
+    goldens_hash: hashesForRun.goldens,
+    chrome_binary: options.chrome_binary ?? process.env.WT_CHROME ?? null,
+    chrome_args: options.chrome_args ?? process.env.WT_CHROME_ARGS ?? null,
+  };
   const date = options.date ?? new Date().toISOString().slice(0, 10);
   const label = options.label ?? `${options.sites}-${options.preset}`;
   // Dry runs (fake lifecycle — no real site booted) are prefixed and bannered so
   // they can never be mistaken for, or ingested as, a real benchmark result.
-  const outputDir = path.join(outputRoot, `${options.fake ? "dry-" : ""}${date}-${label}`);
+  const prefix = label.startsWith(date) ? "" : `${date}-`;
+  const outputDir = path.join(outputRoot, `${options.fake ? "dry-" : ""}${prefix}${label}`);
   fs.mkdirSync(outputDir, { recursive: true });
   fs.writeFileSync(path.join(outputDir, "results.csv"), csv(rows));
   fs.writeFileSync(path.join(outputDir, "run.json"), JSON.stringify({ options: { ...options, prices: PRICES }, capsules, rows, verdicts }, null, 2));

@@ -1,0 +1,253 @@
+{
+  "options": {
+    "preset": "smoke",
+    "sites": "directory-9d8",
+    "arms": [
+      "ts-webmcp-native"
+    ],
+    "seed": 1,
+    "budget": 2,
+    "perturbed": false,
+    "models": {},
+    "maxConsecutiveInfra": 2,
+    "taskIds": [
+      "directory-search"
+    ],
+    "n": 1,
+    "defaultModel": "gpt-5.6-sol",
+    "label": "test-native-webmcp",
+    "fake": false,
+    "model": "gpt-5.6-sol",
+    "armModels": {
+      "ts-webmcp-native": "gpt-5.6-sol"
+    },
+    "git_revision": "ed958207583323d964a9f02cfdbb1a414ceeb915-dirty",
+    "task_set_hash": "07aef320029195b45128a93364d7bbd7c45853ffb8fa5e54613d0dd37e4063d2",
+    "goldens_hash": "88421834fd03b608de6ec39ec125305c9f468f9f9729e801b29aef317eb3f2ec",
+    "prices": [
+      [
+        "claude-fable-5",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "claude-opus-5",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-opus-4",
+        [
+          5,
+          25,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "claude-sonnet-5",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4-6",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-sonnet-4",
+        [
+          3,
+          15,
+          0.3,
+          3.75
+        ]
+      ],
+      [
+        "claude-haiku-4",
+        [
+          1,
+          5,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-6-astra",
+        [
+          10,
+          50,
+          1,
+          12.5
+        ]
+      ],
+      [
+        "gpt-5.6-sol",
+        [
+          5,
+          30,
+          0.5,
+          6.25
+        ]
+      ],
+      [
+        "gpt-5.6-terra",
+        [
+          2.5,
+          15,
+          0.25,
+          3.125
+        ]
+      ],
+      [
+        "gpt-5.6-luna",
+        [
+          1,
+          6,
+          0.1,
+          1.25
+        ]
+      ],
+      [
+        "gpt-5.5",
+        [
+          5,
+          30,
+          0.5,
+          0
+        ]
+      ],
+      [
+        "computer-use-preview",
+        [
+          1.5,
+          6,
+          0.15,
+          0
+        ]
+      ],
+      [
+        "gemini-3.6-flash",
+        [
+          0.75,
+          3.75,
+          0.075,
+          0
+        ]
+      ]
+    ],
+    "chrome_binary": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "chrome_args": "--enable-features=WebMCPTesting,WebMCP --enable-blink-features=DocumentModelcontext"
+  },
+  "capsules": [
+    {
+      "siteId": "directory-9d8",
+      "seed": 1,
+      "port": 3215,
+      "runId": "wt-3215",
+      "webmcp": true,
+      "golden_applied": true,
+      "versions": {}
+    }
+  ],
+  "rows": [
+    {
+      "run_id": "directory-search_ts-webmcp-native_faaddd10-0b5f-4abc-a06c-042a629632e4",
+      "task_id": "directory-search",
+      "arm": "ts-webmcp-native",
+      "method": "ts-webmcp-native",
+      "model": "gpt-5.6-sol",
+      "model_snapshot": "gpt-5.6-sol",
+      "tool_version": "typesafe-computer-use@0.2.0",
+      "site": "directory-9d8",
+      "start_url": "http://127.0.0.1:3215",
+      "success": true,
+      "pass": true,
+      "failure_category": "",
+      "wall_clock_s": "14.421",
+      "reset_s": "6.201",
+      "setup_s": "0.000",
+      "agent_s": "8.220",
+      "ms": 14421,
+      "model_turns": 2,
+      "actions_or_tool_calls": 3,
+      "input_tokens": 1254,
+      "output_tokens": 72,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "snapshot_source": "typesafe-computer-use@0.2.0",
+      "stop_reason": "",
+      "refusal": false,
+      "truncated": false,
+      "effort": "provider-default",
+      "caching": "unsupported",
+      "tokens": 1326,
+      "est_cost_usd": 0.00843,
+      "cost_estimated": "chatgpt_plus_codex (actual: $0.00)",
+      "retries": 0,
+      "retry_wait_ms": 0,
+      "budget_exhausted": false,
+      "temperature": 0,
+      "perturbation_id": "none",
+      "spec_shape": "none",
+      "timestamp": "2026-09-21T10:15:30.779Z",
+      "transcript": [
+        {
+          "action": "wait_tools",
+          "tools_wait_ms": 1286,
+          "tools_wait_timed_out": false,
+          "tools_stabilized_count": 3
+        },
+        {
+          "action": "discovery",
+          "toolCount": 3,
+          "tools": [
+            "get_bookmark",
+            "search_bookmarks",
+            "subscribe_newsletter"
+          ],
+          "selected_mode": "webmcp",
+          "executed_mode": "webmcp",
+          "webmcp_implementation": "native"
+        },
+        {
+          "action": "execute_native_tool",
+          "tool": "search_bookmarks",
+          "args": {
+            "category": "Design",
+            "query": "design tool"
+          },
+          "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"site\\\":{\\\"name\\\":\\\"9d8/directory\\\",\\\"description\\\":\\\"Use this template to display a collection of resources or bookmarks. Create a directory website in little to no time.\\\"},\\\"query\\\":\\\"design tool\\\",\\\"category\\\":\\\"Design\\\",\\\"total\\\":1,\\\"results\\\":[{\\\"slug\\\":\\\"figma\\\",\\\"title\\\":\\\"Figma\\\",\\\"description\\\":\\\"The collaborative interface design tool\\\",\\\"category\\\":\\\"Design\\\",\\\"url\\\":\\\"https://figma.com\\\",\\\"page\\\":\\\"/figma\\\"}],\\\"availableCategories\\\":[{\\\"name\\\":\\\"Development\\\",\\\"description\\\":\\\"Programming and development resources\\\"},{\\\"name\\\":\\\"Design\\\",\\\"description\\\":\\\"Design tools and inspiration\\\"},{\\\"name\\\":\\\"Productivity\\\",\\\"description\\\":\\\"Tools and resources for getting things done\\\"},{\\\"name\\\":\\\"Learning\\\",\\\"description\\\":\\\"Educational resources and tutorials\\\"}]}\"}]}"
+        }
+      ],
+      "final_text": "Final answer: Figma."
+    }
+  ],
+  "verdicts": [
+    {
+      "site": "directory-9d8",
+      "taskId": "directory-search",
+      "tier": "act-short",
+      "method": "ts-webmcp-native",
+      "solved": true,
+      "passes": 1,
+      "attempts": 1
+    }
+  ]
+}
