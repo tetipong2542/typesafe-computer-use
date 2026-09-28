@@ -1,0 +1,25 @@
+{
+  "name": "@openmausbot/typesafe-adapter",
+  "version": "0.1.0",
+  "description": "OpenMausBot TypeScript Adapter for TypeSafe Computer Use Engine",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "openmausbot",
+    "typesafe-computer-use",
+    "mcp",
+    "browser-automation",
+    "hybrid-router"
+  ],
+  "author": "tetipong2542",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}
