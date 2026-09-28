@@ -173,3 +173,83 @@ def test_shadow_mode_probes_dom_and_executes_visual():
         assert decision.shadow_match_result == "match"
 
     asyncio.run(_test())
+
+
+def test_hybrid_mode_dom_stall_escalates_to_visual():
+    """In HYBRID mode, repeated DOM actions or failed verification trigger dynamic escalation to Visual."""
+    async def _test():
+        mock_visual = MagicMock(spec=VisualComputerUseAdapter)
+        mock_visual.execute = AsyncMock(return_value=InteractionResult(
+            mode=InteractionMode.VISUAL_GROUNDED,
+            adapter="VisualComputerUseAdapter",
+            action="click_item",
+            target="item-7",
+            arguments={},
+            confidence=0.94,
+            risk=RiskLevel.NORMAL,
+            side_effect_state=SideEffectState.CONFIRMED_SUCCESS,
+            duration_ms=250.0,
+            result="Clicked item-7",
+        ))
+
+        mock_dom = MagicMock(spec=BrowserDOMAdapter)
+        mock_dom.probe = AsyncMock(return_value=CapabilityReport(
+            mode=InteractionMode.BROWSER_DOM,
+            available=True,
+            locators=["button.submit"],
+        ))
+        mock_dom.execute = AsyncMock(return_value=InteractionResult(
+            mode=InteractionMode.BROWSER_DOM,
+            adapter="BrowserDOMAdapter",
+            action="click",
+            target="button.submit",
+            arguments={},
+            confidence=0.88,
+            risk=RiskLevel.NORMAL,
+            side_effect_state=SideEffectState.CONFIRMED_SUCCESS,
+            duration_ms=45.0,
+            result="Clicked button.submit",
+        ))
+        # Expectation verification fails, simulating unverified UI state / no progress
+        mock_dom.verify = AsyncMock(return_value=VerificationResult(
+            verified=False,
+            mode=InteractionMode.BROWSER_DOM,
+            reason="Element not updated",
+        ))
+
+        router = ShadowInteractionRouter(
+            visual_adapter=mock_visual,
+            dom_adapter=mock_dom,
+            mode=RouterMode.HYBRID,
+        )
+
+        req = InteractionRequest(
+            mode=InteractionMode.BROWSER_DOM,
+            action="click_item",
+            target="button.submit",
+            context={"app": "Google Chrome"},
+        )
+        expectation = VerificationExpectation(
+            mode=InteractionMode.BROWSER_DOM,
+            condition="visible",
+            target="#success-badge",
+        )
+
+        # Turn 1: DOM executes, verification fails (consecutive_stalls = 1, threshold not yet reached)
+        _res1, dec1 = await router.route_and_execute(req, expectation=expectation)
+        assert dec1.executed_mode == InteractionMode.BROWSER_DOM
+        assert dec1.progress_signal == "progress"
+        assert dec1.verification_result == "fail"
+
+        # Turn 2: Repeated action with unverified state -> triggers escalation!
+        _res2, dec2 = await router.route_and_execute(req, expectation=expectation)
+        assert dec2.executed_mode == InteractionMode.VISUAL_GROUNDED
+        assert dec2.fallback_from == InteractionMode.BROWSER_DOM
+        assert dec2.fallback_to == InteractionMode.VISUAL_GROUNDED
+        assert dec2.progress_signal == "loop_detected"
+        assert dec2.side_effect_state == "confirmed_success"
+        assert dec2.verification_result == "pass"
+        assert mock_visual.execute.await_count == 1
+
+    asyncio.run(_test())
+

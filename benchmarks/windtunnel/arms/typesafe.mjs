@@ -546,8 +546,10 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
   const transcript = [];
 
   if (model !== "none") {
-    const targetUrl = new URL(task.path || "/", capsule.baseUrl).href;
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    if (!driverOptions.skipGoto) {
+      const targetUrl = new URL(task.path || "/", capsule.baseUrl).href;
+      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    }
 
     const driver = driverOptions.driverInstance || createModelDriver({ armId, model, maxTurns: 5, ...driverOptions });
     let finalText = "";
@@ -614,6 +616,10 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
 
     const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nInteractive elements on page:\n${JSON.stringify(interactiveSummary, null, 2)}\n\nYou MUST first execute the requested action (such as clicking an element or filling an input) using the provided tools before stating the final answer.`;
     const messages = [{ role: "user", content: initialPrompt }];
+    let consecutiveStalls = 0;
+    let lastActionSignature = "";
+    let loopDetected = false;
+    const allowEscalation = Boolean(driverOptions.allowEscalation);
 
     while (driver.turnIndex < driver.maxTurns) {
       let turnRes;
@@ -645,6 +651,16 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
       if (calls.length > 0) {
         for (const call of calls) {
           const args = call.arguments || {};
+          const actionSig = `${call.name}:${JSON.stringify(args)}`;
+          const prevUrl = typeof page.url === "function" ? page.url() : "";
+          let prevText = "";
+          try {
+            prevText = await page.locator("body").innerText().catch(() => "");
+          } catch {}
+
+          let actionFailed = false;
+          let actionError = null;
+
           try {
             if (call.name === "click" && args.selector) {
               await page.locator(args.selector).first().click({ timeout: 5000 });
@@ -665,8 +681,51 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
             messages.push({ role: "assistant", content: `Call ${call.name} with ${JSON.stringify(args)}` });
             messages.push({ role: "user", content: `Tool result: Action executed. Current page text:\n${visibleText.slice(0, 1500)}` });
           } catch (err) {
+            actionFailed = true;
+            actionError = err.message;
             transcript.push({ action: "action_error", tool: call.name, error: err.message, mode: "browser_dom" });
             messages.push({ role: "user", content: `Action error: ${err.message}. Try an alternative selector.` });
+          }
+
+          const curUrl = typeof page.url === "function" ? page.url() : "";
+          let curText = "";
+          try {
+            curText = await page.locator("body").innerText().catch(() => "");
+          } catch {}
+
+          const stateChanged = (prevUrl !== curUrl) || (prevText !== curText);
+          if (!stateChanged || actionFailed) {
+            consecutiveStalls++;
+          } else {
+            consecutiveStalls = 0;
+          }
+
+          if (actionSig === lastActionSignature && !stateChanged) {
+            loopDetected = true;
+          }
+          lastActionSignature = actionSig;
+        }
+
+        // Escalation check if allowed
+        if (allowEscalation) {
+          const isStalled = consecutiveStalls >= 2 || loopDetected;
+          const isTurnBudgetStalled = driver.turnIndex >= 3 && !finalText;
+          if (isStalled || isTurnBudgetStalled) {
+            failure = "dom_stalled_or_budget_exhausted";
+            const stallReason = loopDetected
+              ? "dom_action_loop_detected"
+              : consecutiveStalls >= 2
+              ? "dom_progress_stalled_consecutive"
+              : "dom_turn_budget_exhausted_without_answer";
+            transcript.push({
+              action: "dom_stall_detected",
+              reason: stallReason,
+              consecutive_stalls: consecutiveStalls,
+              loop_detected: loopDetected,
+              turn_index: driver.turnIndex,
+              mode: "browser_dom",
+            });
+            break;
           }
         }
       } else if (turnRes.finalText) {
@@ -680,6 +739,19 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
           continue;
         }
         finalText = turnRes.finalText;
+        break;
+      }
+
+      if (allowEscalation && driver.turnIndex >= 3 && !finalText) {
+        failure = "dom_stalled_or_budget_exhausted";
+        transcript.push({
+          action: "dom_stall_detected",
+          reason: "dom_turn_budget_exhausted_without_answer",
+          consecutive_stalls: consecutiveStalls,
+          loop_detected: loopDetected,
+          turn_index: driver.turnIndex,
+          mode: "browser_dom",
+        });
         break;
       }
     }
@@ -704,6 +776,9 @@ export async function runBrowserDOM({ task, capsule, page, model = "none", drive
         actions_performed: executedActions,
         visual_invocation_count: 0,
         accounting: acct,
+        consecutive_stalls: consecutiveStalls,
+        loop_detected: loopDetected,
+        messages_history: messages,
       },
     });
   }
@@ -768,8 +843,10 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
 
   const setupMs = performance.now() - started;
   const transcript = [];
-  const targetUrl = new URL(task.path || "/", capsule.baseUrl).href;
-  await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  if (!driverOptions.skipGoto) {
+    const targetUrl = new URL(task.path || "/", capsule.baseUrl).href;
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  }
 
   let screenshotCount = 0;
   let screenshotBytes = 0;
@@ -804,8 +881,16 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       },
     ];
 
-    const initialPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nYou operate the browser with visual screenshots. You MUST first execute the required mouse click or keyboard action on the screen using the provided tools. Do NOT provide the final answer yet.`;
-    const messages = [{ role: "user", content: initialPrompt }];
+    const defaultPrompt = `${task.prompt || `Perform task: ${task.id}`}\n\nYou operate the browser with visual screenshots. You MUST first execute the required mouse click or keyboard action on the screen using the provided tools. Do NOT provide the final answer yet.`;
+    const messages = (driverOptions.initialMessages && Array.isArray(driverOptions.initialMessages))
+      ? [
+          ...driverOptions.initialMessages,
+          {
+            role: "user",
+            content: `[Escalation to Visual Mode] The DOM interaction was unable to proceed (${driverOptions.escalationReason || "dom_stalled_or_budget_exhausted"}). You are now operating the browser via visual screenshots. A fresh screenshot of the current page is provided. You MUST interact visually via mouse_click or type_text to complete the task.`,
+          },
+        ]
+      : [{ role: "user", content: defaultPrompt }];
     let finalText = "";
     let failure = null;
 
@@ -850,23 +935,34 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       if (calls.length > 0) {
         for (const call of calls) {
           const args = call.arguments || {};
-          if (call.name === "mouse_click" && args.x !== undefined && args.y !== undefined) {
-            await page.mouse.click(args.x, args.y);
-            executedVisualActions++;
-            transcript.push({ action: "mouse_click", coordinate: [args.x, args.y], mode: "visual_grounded" });
-            messages.push({ role: "assistant", content: `Clicked at coordinates [${args.x}, ${args.y}]` });
-            if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
-            else await new Promise((r) => setTimeout(r, 10));
-            messages.push({ role: "user", content: `Mouse click executed at [${args.x}, ${args.y}]. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
-          } else if (call.name === "type_text" && args.text) {
-            await page.keyboard.type(args.text);
-            if (args.press_enter) await page.keyboard.press("Enter");
-            executedVisualActions++;
-            transcript.push({ action: "type_text", text: args.text, press_enter: args.press_enter, mode: "visual_grounded" });
-            messages.push({ role: "assistant", content: `Typed text: ${args.text}` });
-            if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
-            else await new Promise((r) => setTimeout(r, 10));
-            messages.push({ role: "user", content: `Text typed. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
+          try {
+            if (call.name === "mouse_click" && args.x !== undefined && args.y !== undefined) {
+              if (page.mouse && typeof page.mouse.click === "function") {
+                await page.mouse.click(args.x, args.y);
+              }
+              executedVisualActions++;
+              transcript.push({ action: "mouse_click", coordinate: [args.x, args.y], mode: "visual_grounded" });
+              messages.push({ role: "assistant", content: `Clicked at coordinates [${args.x}, ${args.y}]` });
+              if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
+              else await new Promise((r) => setTimeout(r, 10));
+              messages.push({ role: "user", content: `Mouse click executed at [${args.x}, ${args.y}]. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
+            } else if (call.name === "type_text" && args.text) {
+              if (page.keyboard && typeof page.keyboard.type === "function") {
+                await page.keyboard.type(args.text);
+                if (args.press_enter && typeof page.keyboard.press === "function") {
+                  await page.keyboard.press("Enter");
+                }
+              }
+              executedVisualActions++;
+              transcript.push({ action: "type_text", text: args.text, press_enter: args.press_enter, mode: "visual_grounded" });
+              messages.push({ role: "assistant", content: `Typed text: ${args.text}` });
+              if (typeof page.waitForTimeout === "function") await page.waitForTimeout(600);
+              else await new Promise((r) => setTimeout(r, 10));
+              messages.push({ role: "user", content: `Text typed. Now inspect the updated screen and provide the final answer beginning with 'Final answer:'.` });
+            }
+          } catch (err) {
+            transcript.push({ action: "action_error", tool: call.name, error: err.message, mode: "visual_grounded" });
+            messages.push({ role: "user", content: `Visual action error: ${err.message}.` });
           }
         }
       } else if (turnRes.finalText) {
@@ -904,6 +1000,7 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
         screenshot_captured: true,
         screenshot_count: screenshotCount,
         screenshot_bytes: screenshotBytes,
+        visual_invocation_count: screenshotCount || 1,
         accounting: acct,
       },
     });
@@ -940,6 +1037,7 @@ export async function runVisual({ task, capsule, page, model = "none", driverOpt
       executed_mode: "visual_grounded",
       screenshot_captured: true,
       screenshot_bytes: screenshotBuf.length,
+      visual_invocation_count: 1,
     },
   });
 }
@@ -1077,7 +1175,13 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
 
   // Attempt Tier 2: Browser DOM
   try {
-    const domRes = await runBrowserDOM({ task, capsule, page, model, driverOptions });
+    const domRes = await runBrowserDOM({
+      task,
+      capsule,
+      page,
+      model,
+      driverOptions: { ...driverOptions, skipGoto: true, allowEscalation: true },
+    });
     if (!domRes.failure) {
       return {
         ...domRes,
@@ -1097,7 +1201,14 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
       };
     }
 
-    if (domRes.failure === "unknown-side-effect-halt" || /side[_-]?effect/i.test(domRes.failure)) {
+    // Strict halt on unknown side-effect state: forbid visual fallback/retry
+    if (
+      domRes.failure === "unknown-side-effect-halt" ||
+      /side[_-]?effect/i.test(domRes.failure) ||
+      domRes.telemetry?.side_effect_state === "unknown" ||
+      domRes.side_effect_state === "unknown" ||
+      domRes.telemetry?.halt_reason === "SideEffectState.UNKNOWN"
+    ) {
       return {
         ...domRes,
         armId,
@@ -1116,7 +1227,9 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
     // Fallback to Tier 3: Visual
     const secondFallbackFrom = "browser_dom";
     const secondFallbackTo = "visual_grounded";
-    const secondReason = `DOM execution failed: ${domRes.failure}`;
+    const secondReason = domRes.failure === "dom_stalled_or_budget_exhausted"
+      ? "dom_stalled_or_budget_exhausted"
+      : `DOM execution failed: ${domRes.failure}`;
     transcript.push({
       action: "fallback",
       from_mode: secondFallbackFrom,
@@ -1131,11 +1244,44 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
       tools_discovered: tools.length,
     });
 
-    const visualRes = await runVisual({ task, capsule, page, model, driverOptions });
+    const visualRes = await runVisual({
+      task,
+      capsule,
+      page,
+      model,
+      driverOptions: {
+        ...driverOptions,
+        skipGoto: true,
+        initialMessages: domRes.telemetry?.messages_history || null,
+        escalationReason: secondReason,
+      },
+    });
+
+    // Merge unified accounting across DOM and Visual phases
+    const combinedUsage = {
+      input_tokens: (domRes.usage?.input_tokens || domRes.usage?.prompt_tokens || 0) +
+                    (visualRes.usage?.input_tokens || visualRes.usage?.prompt_tokens || 0),
+      output_tokens: (domRes.usage?.output_tokens || domRes.usage?.completion_tokens || 0) +
+                     (visualRes.usage?.output_tokens || visualRes.usage?.completion_tokens || 0),
+      prompt_tokens: (domRes.usage?.prompt_tokens || domRes.usage?.input_tokens || 0) +
+                     (visualRes.usage?.prompt_tokens || visualRes.usage?.input_tokens || 0),
+      completion_tokens: (domRes.usage?.completion_tokens || domRes.usage?.output_tokens || 0) +
+                         (visualRes.usage?.completion_tokens || visualRes.usage?.output_tokens || 0),
+      total_tokens: (domRes.usage?.total_tokens || 0) + (visualRes.usage?.total_tokens || 0),
+    };
+    const combinedCost = Number(((domRes.cost || 0) + (visualRes.cost || 0)).toFixed(6));
+    const combinedCostNominal = Number(((domRes.cost_nominal || 0) + (visualRes.cost_nominal || 0)).toFixed(6));
+    const combinedTurns = (domRes.turns || 0) + (visualRes.turns || 0);
+
     return {
       ...visualRes,
       armId,
-      transcript: [...transcript, ...visualRes.transcript],
+      usage: combinedUsage,
+      cost: combinedCost,
+      cost_nominal: combinedCostNominal,
+      turns: combinedTurns,
+      budget_exhausted: domRes.budget_exhausted || visualRes.budget_exhausted,
+      transcript: [...transcript, ...domRes.transcript, ...visualRes.transcript],
       telemetry: {
         ...visualRes.telemetry,
         selected_mode: "webmcp",
@@ -1146,6 +1292,18 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
         tools_wait_ms: waitDiag.waitMs,
         tools_wait_timed_out: waitDiag.timedOut,
         tools_discovered: tools.length,
+        dom_phase_turns: domRes.turns || 0,
+        visual_phase_turns: visualRes.turns || 0,
+        dom_phase_cost: domRes.cost || 0,
+        visual_phase_cost: visualRes.cost || 0,
+        visual_invocation_count: visualRes.telemetry?.visual_invocation_count || visualRes.telemetry?.screenshot_count || 1,
+        accounting: {
+          usage: combinedUsage,
+          actualCostUsd: combinedCost,
+          nominalCostUsd: combinedCostNominal,
+          turns: combinedTurns,
+          budgetExhausted: domRes.budget_exhausted || visualRes.budget_exhausted,
+        },
       },
     };
   } catch (err) {
@@ -1168,7 +1326,17 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
       });
     }
 
-    const visualRes = await runVisual({ task, capsule, page, model, driverOptions });
+    const visualRes = await runVisual({
+      task,
+      capsule,
+      page,
+      model,
+      driverOptions: {
+        ...driverOptions,
+        skipGoto: true,
+        escalationReason: err.message,
+      },
+    });
     return {
       ...visualRes,
       armId,
@@ -1183,6 +1351,7 @@ export async function runHybridAuto({ task, capsule, page, model = "none", drive
         tools_wait_ms: waitDiag.waitMs,
         tools_wait_timed_out: waitDiag.timedOut,
         tools_discovered: tools.length,
+        visual_invocation_count: visualRes.telemetry?.visual_invocation_count || visualRes.telemetry?.screenshot_count || 1,
       },
     };
   }

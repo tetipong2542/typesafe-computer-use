@@ -39,6 +39,9 @@ class ShadowDecision:
     fallback_to: InteractionMode | None = None
     fallback_reason: str | None = None
     fallback_count: int = 0
+    progress_signal: str | None = None
+    side_effect_state: str | None = None
+    verification_result: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -57,6 +60,9 @@ class ShadowInteractionRouter:
         self.native_webmcp_adapter = native_webmcp_adapter
         self._configured_mode = mode
         self._fallback_count: int = 0
+        self._consecutive_stalls: int = 0
+        self._last_action_sig: str | None = None
+        self._dom_turn_count: int = 0
 
     @property
     def mode(self) -> RouterMode:
@@ -71,6 +77,9 @@ class ShadowInteractionRouter:
     def reset_telemetry(self) -> None:
         """Reset cumulative telemetry counters."""
         self._fallback_count = 0
+        self._consecutive_stalls = 0
+        self._last_action_sig = None
+        self._dom_turn_count = 0
 
     async def probe(self, context: dict[str, Any] | None = None) -> dict[InteractionMode, CapabilityReport]:
         """Probe available adapters according to active rollout mode."""
@@ -377,16 +386,65 @@ class ShadowInteractionRouter:
                 context=request.context,
             )
 
+            self._dom_turn_count += 1
+            current_sig = f"{dom_action}:{dom_target}"
+            is_repeat = (current_sig == self._last_action_sig)
+            self._last_action_sig = current_sig
+
             dom_res = await self.dom_adapter.execute(dom_req)
 
             # Check outcome of DOM execution
             if dom_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS:
                 # Post-action verification if expectation provided
+                verified = True
                 if expectation:
                     try:
-                        await self.dom_adapter.verify(expectation)
+                        v_res = await self.dom_adapter.verify(expectation)
+                        verified = bool(v_res and v_res.verified)
                     except Exception as e:
                         logger.debug("Post-action verification hook error: %s", e)
+                        verified = False
+
+                if not verified or is_repeat:
+                    self._consecutive_stalls += 1
+                else:
+                    self._consecutive_stalls = 0
+
+                # Check if DOM stall escalation threshold reached
+                should_escalate = (self._consecutive_stalls >= 2 or self._dom_turn_count >= 3)
+                if should_escalate and not verified:
+                    escalation_reason = (
+                        "DOM action repeated with no state change"
+                        if is_repeat
+                        else f"DOM tier turn budget reached ({self._dom_turn_count} turns) without verified progress"
+                    )
+                    progress_sig = "loop_detected" if is_repeat else "dom_turns_exhausted"
+                    self._fallback_count += 1
+                    logger.info(
+                        "DOM stalled (%s). Dynamically escalating to Tier 3: Visual Grounded.",
+                        escalation_reason,
+                    )
+                    vis_res = await self.visual_adapter.execute(request)
+                    decision = ShadowDecision(
+                        rollout_mode=RouterMode.HYBRID,
+                        executed_mode=InteractionMode.VISUAL_GROUNDED,
+                        shadow_mode=InteractionMode.BROWSER_DOM,
+                        shadow_target=dom_target,
+                        shadow_confidence=vis_res.confidence,
+                        shadow_reason=f"DOM stalled ({escalation_reason}); escalated to visual grounding.",
+                        shadow_match_result="escalated_to_visual",
+                        router_reason=f"Hybrid escalation: BROWSER_DOM -> VISUAL_GROUNDED due to {escalation_reason}",
+                        selected_mode=InteractionMode.BROWSER_DOM,
+                        fallback_from=InteractionMode.BROWSER_DOM,
+                        fallback_to=InteractionMode.VISUAL_GROUNDED,
+                        fallback_reason=escalation_reason,
+                        fallback_count=self._fallback_count,
+                        progress_signal=progress_sig,
+                        side_effect_state=SideEffectState.CONFIRMED_SUCCESS.value if vis_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS else SideEffectState.CONFIRMED_FAILURE.value,
+                        verification_result="pass" if vis_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS else "fail",
+                        metadata={"escalated": True, "dom_action": dom_action, "dom_target": dom_target, "dom_turns": self._dom_turn_count},
+                    )
+                    return vis_res, decision
 
                 decision = ShadowDecision(
                     rollout_mode=RouterMode.HYBRID,
@@ -395,19 +453,23 @@ class ShadowInteractionRouter:
                     shadow_target=dom_target,
                     shadow_confidence=dom_res.confidence,
                     shadow_reason="DOM execution confirmed success",
-                    shadow_match_result="match",
+                    shadow_match_result="match" if verified else "unverified",
                     router_reason=f"Hybrid execution: executed via {InteractionMode.BROWSER_DOM}",
                     selected_mode=InteractionMode.BROWSER_DOM,
                     fallback_from=InteractionMode.WEBMCP if fallback_from_mcp else None,
                     fallback_to=InteractionMode.BROWSER_DOM if fallback_from_mcp else None,
                     fallback_reason=mcp_fallback_reason if fallback_from_mcp else None,
                     fallback_count=self._fallback_count,
-                    metadata={"dom_action": dom_action, "dom_target": dom_target},
+                    progress_signal="progress",
+                    side_effect_state=SideEffectState.CONFIRMED_SUCCESS.value,
+                    verification_result="pass" if verified else "fail",
+                    metadata={"dom_action": dom_action, "dom_target": dom_target, "dom_turns": self._dom_turn_count},
                 )
                 return dom_res, decision
 
             elif dom_res.side_effect_state == SideEffectState.CONFIRMED_FAILURE:
                 # Clean failure without persistent side-effect -> Safe to fallback to Visual Core
+                self._consecutive_stalls += 1
                 fallback_reason = dom_res.error or "DOM execution failed with CONFIRMED_FAILURE"
                 self._fallback_count += 1
                 logger.info(
@@ -433,7 +495,10 @@ class ShadowInteractionRouter:
                     fallback_to=InteractionMode.VISUAL_GROUNDED,
                     fallback_reason=fallback_reason,
                     fallback_count=self._fallback_count,
-                    metadata={"fallback": True, "dom_error": fallback_reason},
+                    progress_signal="dom_error",
+                    side_effect_state=SideEffectState.CONFIRMED_SUCCESS.value if vis_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS else SideEffectState.CONFIRMED_FAILURE.value,
+                    verification_result="pass" if vis_res.side_effect_state == SideEffectState.CONFIRMED_SUCCESS else "fail",
+                    metadata={"fallback": True, "dom_error": fallback_reason, "dom_turns": self._dom_turn_count},
                 )
                 return vis_res, decision
 
@@ -461,6 +526,9 @@ class ShadowInteractionRouter:
                     fallback_to=None,
                     fallback_reason="Fallback forbidden: ambiguous side effect state",
                     fallback_count=self._fallback_count,
+                    progress_signal="unknown_side_effect",
+                    side_effect_state=SideEffectState.UNKNOWN.value,
+                    verification_result="unverified",
                     metadata={
                         "selected_mode": InteractionMode.BROWSER_DOM.value,
                         "executed_mode": InteractionMode.BROWSER_DOM.value,
@@ -471,6 +539,7 @@ class ShadowInteractionRouter:
                         "fallback_count": self._fallback_count,
                         "fallback_forbidden": True,
                         "awaiting_review": True,
+                        "dom_turns": self._dom_turn_count,
                     },
                 )
                 return dom_res, decision

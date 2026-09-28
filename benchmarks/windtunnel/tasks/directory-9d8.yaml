@@ -8,8 +8,18 @@ tasks:
     # the reported name. The seeded design-category listings are Figma and
     # Dribbble; neither name appears in the prompt.
     predicate:
-      type: answer
-      contains_any: [figma, dribbble]
+      all:
+        - type: answer
+          contains_any: [figma, dribbble]
+        - any:
+            - type: worker_trace
+              action: click
+            - type: worker_trace
+              action: fill
+            - type: worker_trace
+              action: mouse_click
+            - type: worker_trace
+              action: execute_native_tool
   - id: directory-filter
     tier: act-short
     prompt: Filter the directory to developer tools, then report one result shown in the filtered list.
@@ -19,7 +29,17 @@ tasks:
     # a result makes the action observable in the answer. The seeded
     # Development category holds exactly GitHub and React (init-db.mjs);
     # neither name appears in the prompt.
-    predicate: { type: answer, matches: "\\b(github|react)\\b" }
+    predicate:
+      all:
+        - type: answer
+          matches: "\\b(github|react)\\b"
+        - any:
+            - type: worker_trace
+              action: click
+            - type: worker_trace
+              action: mouse_click
+            - type: worker_trace
+              action: execute_native_tool
   - id: directory-detail
     tier: answer
     prompt: Open the Figma listing and report its one-line description.
@@ -27,5 +47,14 @@ tasks:
     # The seed describes Figma as "The collaborative interface design tool";
     # it's visible page text, so no interface is structurally favored.
     predicate:
-      type: answer
-      contains: [collaborative]
+      all:
+        - type: answer
+          contains: [collaborative]
+        - any:
+            - type: browser_state
+              url_path: "/figma"
+            - type: worker_trace
+              action: execute_native_tool
+            - type: dom_element
+              selector: "h1, [data-testid='bookmark-title'], .bookmark-title, a[href*='figma']"
+

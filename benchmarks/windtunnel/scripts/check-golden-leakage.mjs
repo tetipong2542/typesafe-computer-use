@@ -5,9 +5,32 @@ import { load } from "js-yaml";
 const root = path.resolve(import.meta.dirname, "..");
 const allow = new Set(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "golden-leakage-allowlist.json"), "utf8")).map(({ file, literal }) => `${file}:${String(literal).toLowerCase()}`));
 const literals = [];
+function extractPredicateValues(pred) {
+  if (!pred || typeof pred !== "object") return [];
+  const vals = [];
+  if (Array.isArray(pred.contains)) vals.push(...pred.contains);
+  if (Array.isArray(pred.contains_any)) vals.push(...pred.contains_any);
+  if (Array.isArray(pred.all)) for (const sub of pred.all) vals.push(...extractPredicateValues(sub));
+  if (Array.isArray(pred.any)) for (const sub of pred.any) vals.push(...extractPredicateValues(sub));
+  return vals;
+}
+
+function extractPredicateMatches(pred) {
+  if (!pred || typeof pred !== "object") return [];
+  const matches = [];
+  if (pred.matches) matches.push(pred.matches);
+  if (Array.isArray(pred.all)) for (const sub of pred.all) matches.push(...extractPredicateMatches(sub));
+  if (Array.isArray(pred.any)) for (const sub of pred.any) matches.push(...extractPredicateMatches(sub));
+  return matches;
+}
+
 for (const file of fs.readdirSync(path.join(root, "tasks")).filter((file) => file.endsWith(".yaml") && !file.startsWith("calibration-"))) {
   const doc = load(fs.readFileSync(path.join(root, "tasks", file), "utf8"));
-  for (const task of doc.tasks ?? []) for (const value of [...(task.predicate?.contains ?? []), ...(task.predicate?.contains_any ?? [])]) if (String(value).length >= 6) literals.push(String(value).toLowerCase());
+  for (const task of doc.tasks ?? []) {
+    for (const value of extractPredicateValues(task.predicate)) {
+      if (String(value).length >= 6) literals.push(String(value).toLowerCase());
+    }
+  }
 }
 const hits = [];
 // 1. Scan goldens for answer leakage
@@ -21,14 +44,14 @@ const armEntities = new Set(["development", "figma", "dribbble", "github", "reac
 for (const file of fs.readdirSync(path.join(root, "tasks")).filter((f) => f.endsWith(".yaml") && !f.startsWith("calibration-"))) {
   const doc = load(fs.readFileSync(path.join(root, "tasks", file), "utf8"));
   for (const task of doc.tasks ?? []) {
-    for (const val of [...(task.predicate?.contains ?? []), ...(task.predicate?.contains_any ?? [])]) {
+    for (const val of extractPredicateValues(task.predicate)) {
       const s = String(val).toLowerCase();
       if (s.length >= 5 && !["webmcp", "empty", "online"].includes(s)) {
         armEntities.add(s);
       }
     }
-    if (task.predicate?.matches) {
-      const words = String(task.predicate.matches).match(/[a-zA-Z]{5,}/g) || [];
+    for (const matchStr of extractPredicateMatches(task.predicate)) {
+      const words = String(matchStr).match(/[a-zA-Z]{5,}/g) || [];
       for (const w of words) {
         const s = w.toLowerCase();
         if (["github", "react", "figma", "dribbble"].includes(s)) {

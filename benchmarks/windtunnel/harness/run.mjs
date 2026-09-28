@@ -42,7 +42,7 @@ export async function runBatch({
           result.attemptMs = performance.now() - started;
           verdict = result.failure
             ? { pass: false, detail: `harness-${classifyFailure(result.failure)}: ${result.failure}` }
-            : await score(task.predicate, capsule, result.finalText);
+            : await score(task.predicate, capsule, result.finalText, { result, page, context });
         } catch (error) {
           const msg = error.message;
           verdict = { pass: false, detail: `harness-${classifyFailure(msg)}: ${msg}` };

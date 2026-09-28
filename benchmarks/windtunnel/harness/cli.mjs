@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { chromium } from "playwright";
 import { run as runScripted } from "../arms/scripted.mjs";
 import { run as runBrowserUse, TOOL_VERSION as BROWSERUSE_VERSION } from "../arms/browseruse.mjs";
@@ -71,18 +72,24 @@ export const USAGE = `Usage: node harness/cli.mjs [options]
   --budget <usd>              Hard spending cap
   --max-consecutive-infra <n> Abort the flight after n consecutive infrastructure
                               failures (default 2; 0 disables)
+  --strict-clean              Enforce clean git working directory before running
+  --definitive                Run benchmark under definitive requirements (enforces clean git tree)
   --perturbed                 Enable perturbations
   --label <name>              Label this run
   --model <arm=model>         Override a method model
   --help                      Show this usage`;
 
 export function parseArgs(argv) {
-  const options = { preset: "smoke", sites: "lite", arms: ["scripted"], seed: 1, budget: Infinity, perturbed: false, models: {}, maxConsecutiveInfra: 2 };
+  const options = { preset: "smoke", sites: "lite", arms: ["scripted"], seed: 1, budget: Infinity, perturbed: false, models: {}, maxConsecutiveInfra: 2, strictClean: false, definitive: false };
   let explicitN = false;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flag === "--help") options.help = true;
     else if (flag === "--perturbed") options.perturbed = true;
+    else if (flag === "--strict-clean" || flag === "--definitive") {
+      options.strictClean = true;
+      options.definitive = true;
+    }
     else {
       const value = argv[++i];
       if (value === undefined) throw new Error(`missing value for ${flag}`);
@@ -142,7 +149,17 @@ export function planRuns(options, env = process.env, methods = ARMS) {
 }
 
 function fakePage() {
-  const locator = () => ({ async fill() {}, async click() {}, async press() {}, async innerText() { return "fake page content"; } });
+  const locObj = {
+    first() { return locObj; },
+    async fill() {},
+    async click() {},
+    async press() {},
+    async isVisible() { return true; },
+    async inputValue() { return ""; },
+    async count() { return 1; },
+    async innerText() { return "fake page content"; },
+  };
+  const locator = () => locObj;
   // Enough Playwright surface for every arm's setup + action path (CU mouse /
   // keyboard, WebMCP bridge install + discovery, code-exec screenshot) so a
   // WT_FAKE_LIFECYCLE dry run reaches the model API instead of crashing in setup.
@@ -178,6 +195,17 @@ export async function runBenchmark(argv, {
 } = {}) {
   const options = parseArgs(argv);
   if (options.help) { log(USAGE); return { options }; }
+  if (options.strictClean && env.WT_FAKE_LIFECYCLE !== "1") {
+    try {
+      const gitCwd = path.resolve(import.meta.dirname, "../..");
+      const dirty = execSync("git status --porcelain", { cwd: gitCwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+      if (dirty) {
+        throw new Error(`Strict clean check failed (--strict-clean / --definitive): working directory has uncommitted modifications:\n${dirty}`);
+      }
+    } catch (err) {
+      if (err.message.includes("Strict clean check failed")) throw err;
+    }
+  }
   const plan = planRuns(options, env, methods);
   plan.notices.forEach(log);
   // Fail before anything boots (or spends money), not mid-run with rows lost.

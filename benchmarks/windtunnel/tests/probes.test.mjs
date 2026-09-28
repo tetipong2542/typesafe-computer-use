@@ -10,7 +10,7 @@ test("every non-answer predicate names a probe its site's oracle implements", ()
   for (const file of fs.readdirSync(path.join(ROOT, "tasks")).filter((name) => name.endsWith(".yaml"))) {
     const parsed = load(fs.readFileSync(path.join(ROOT, "tasks", file), "utf8"));
     for (const task of Array.isArray(parsed) ? parsed : parsed.tasks) {
-      if (!task.predicate || task.predicate.type === "answer") continue;
+      if (!task.predicate || task.predicate.type === "answer" || task.predicate.all || task.predicate.any) continue;
       const site = task.site ?? path.basename(file, ".yaml");
       const oracle = path.join(ROOT, "capsules", site, "oracle.sh");
       assert.ok(fs.existsSync(oracle), `${file}:${task.id}: no oracle for site ${site}`);

@@ -28,6 +28,15 @@ export function writeReport({ rows, verdicts, options, capsules = [], outputRoot
   options = {
     ...options,
     git_revision: provenance(),
+    windtunnel_upstream_commit: options.windtunnel_upstream_commit ?? "5ca8644e23826ebb30108e7bad240b61043bfe67",
+    vm_checkpoint: options.vm_checkpoint ?? process.env.WT_VM_CHECKPOINT ?? "tart-macos-arm64-15-clean",
+    router_flags: options.router_flags ?? {
+      shadow_enabled: true,
+      dynamic_escalation: true,
+      max_stall_threshold: 2,
+      turn_budget: 3,
+    },
+    model_driver_version: options.model_driver_version ?? "typesafe-computer-use@0.2.0",
     task_set_hash: hashesForRun.taskSet,
     goldens_hash: hashesForRun.goldens,
     chrome_binary: options.chrome_binary ?? process.env.WT_CHROME ?? null,
