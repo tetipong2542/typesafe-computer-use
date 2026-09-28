@@ -12,6 +12,8 @@ dist/
 
 # Dependencies and Benchmarks
 node_modules/
+**/node_modules/
+**/dist/
 benchmarks/**/node_modules/
 benchmarks/**/.venv*
 benchmarks/**/results/dry-*/
