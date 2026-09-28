@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenMausBot — TypeSafe Autonomous Computer Use Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#312e81',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes pulse-fast {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .animate-pulse-fast {
+      animation: pulse-fast 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: #1f2937;
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- 1. Top Navigation Bar -->
+  <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <span class="text-2xl">🐭</span>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+            OpenMausBot
+          </h1>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            TypeSafe Engine v0.2.0
+          </span>
+        </div>
+        <p class="text-xs text-gray-400">Tri-Tier Hybrid Autonomous Computer Use Engine</p>
+      </div>
+    </div>
+
+    <!-- Center System Status Badges -->
+    <div class="hidden md:flex items-center space-x-3 text-xs">
+      <div id="workerStatusBadge" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="workerStatusText" class="text-gray-300 font-medium">Checking Worker...</span>
+      </div>
+
+      <div id="activeTierBadge" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-800/50 text-indigo-300">
+        <span>⚡ Mode:</span>
+        <span id="activeTierText" class="font-semibold">Auto Hybrid</span>
+      </div>
+
+      <a id="vncLink" href="vnc://127.0.0.1:5900" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 transition" title="Open macOS Screen Sharing">
+        <span>🖥️ Live VNC</span>
+      </a>
+    </div>
+
+    <!-- Right Emergency Stop Control -->
+    <div class="flex items-center space-x-3">
+      <button id="emergencyStopBtn" class="flex items-center space-x-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold text-xs tracking-wider uppercase shadow-lg shadow-red-600/30 transition transform active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+        <span>Emergency Stop</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Emergency Lock Warning Banner -->
+  <div id="emergencyBanner" class="hidden bg-red-950/90 border-b border-red-800 px-6 py-2.5 flex items-center justify-between text-xs text-red-200">
+    <div class="flex items-center space-x-2 font-medium">
+      <span class="text-base">🚨</span>
+      <span>EMERGENCY STOP ENGAGED: Synthetic inputs are locked on the macOS host/VM to prevent unverified actions.</span>
+    </div>
+    <button id="resetLockBtn" class="px-3 py-1 rounded bg-red-800 hover:bg-red-700 text-white font-semibold transition">
+      Reset Lock
+    </button>
+  </div>
+
+  <!-- 2. Main Content Dashboard -->
+  <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-[1600px] w-full mx-auto">
+
+    <!-- Left Column: Task Creator, Presets, and Activity Feed (7 cols) -->
+    <div class="lg:col-span-7 flex flex-col space-y-6">
+
+      <!-- Goal Execution Card -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-lg">🎯</span>
+            <h2 class="font-semibold text-sm text-gray-200">Specify Agent Goal</h2>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="text-gray-400">Preferred Mode:</span>
+            <select id="modeSelect" class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-gray-200 focus:outline-none focus:border-indigo-500">
+              <option value="auto">Auto Hybrid (WebMCP → DOM → Visual)</option>
+              <option value="webmcp">Tier 1: WebMCP Only</option>
+              <option value="dom">Tier 2: Browser DOM Only</option>
+              <option value="visual">Tier 3: Visual Grounded Only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="relative">
+          <textarea id="goalInput" rows="3" class="w-full bg-gray-950 border border-gray-800 rounded-xl p-3.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition" placeholder="e.g. Open https://example.com and find developer tools in directory, or click the checkout button..."></textarea>
+        </div>
+
+        <!-- Preset Quick Buttons -->
+        <div class="flex flex-wrap items-center gap-2 mt-3 text-xs">
+          <span class="text-gray-500 font-medium">Quick Presets:</span>
+          <button class="preset-btn px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition" data-goal="Find Figma in the resource directory and inspect details">
+            🔍 Search Directory (Figma)
+          </button>
+          <button class="preset-btn px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition" data-goal="Filter by Developer Tools category in 9d8 directory">
+            🏷️ Filter Category
+          </button>
+          <button class="preset-btn px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition" data-goal="Simulate consequential purchase requiring explicit human approval">
+            🛡️ Gated Consequential Action
+          </button>
+          <button class="preset-btn px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition" data-goal="Simulate DOM stall to trigger visual escalation">
+            ⚡ Dynamic Escalation
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-800/80">
+          <div class="flex items-center space-x-2 text-xs text-gray-400">
+            <label class="flex items-center space-x-1.5 cursor-pointer">
+              <input type="checkbox" id="simulateDemoCheck" class="rounded bg-gray-800 border-gray-700 text-indigo-600 focus:ring-0">
+              <span>Simulation Demo Mode (Runs in-memory without VM)</span>
+            </label>
+          </div>
+
+          <div class="flex items-center space-x-3">
+            <button id="runGoalBtn" class="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition transform active:scale-95">
+              <span>▶ Run Goal</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Activity & Event Stream Card -->
+      <div class="flex-1 bg-gray-900 border border-gray-800 rounded-2xl flex flex-col overflow-hidden shadow-xl min-h-[420px]">
+        <div class="px-5 py-3.5 border-b border-gray-800 flex items-center justify-between bg-gray-900/50">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <h3 class="font-semibold text-sm text-gray-200">Live Agent Activity & Steps</h3>
+          </div>
+          <div class="flex items-center space-x-2 text-xs text-gray-400">
+            <span id="stepCounter">0 Steps Executed</span>
+            <button id="clearLogsBtn" class="text-gray-500 hover:text-gray-300 transition">Clear</button>
+          </div>
+        </div>
+
+        <!-- Scrollable Feed -->
+        <div id="activityFeed" class="flex-1 p-4 space-y-3 overflow-y-auto scrollbar-thin text-xs font-mono">
+          <div class="text-gray-500 italic p-4 text-center">
+            Ready to execute. Enter a goal above or pick a preset to watch OpenMausBot orchestrate in real-time.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Viewport Preview, Telemetry & Manual Playground (5 cols) -->
+    <div class="lg:col-span-5 flex flex-col space-y-6">
+
+      <!-- Viewport / Screenshot Display -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-xl flex flex-col">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <div class="flex items-center space-x-2">
+            <span class="text-lg">🖼️</span>
+            <h3 class="font-semibold text-sm text-gray-200">Browser Screen Viewport</h3>
+          </div>
+          <span id="viewportEpoch" class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-mono">Epoch: 0</span>
+        </div>
+
+        <div id="viewportContainer" class="relative aspect-[16/10] bg-gray-950 rounded-xl border border-gray-800 flex items-center justify-center overflow-hidden group">
+          <img id="viewportImg" class="w-full h-full object-contain hidden" alt="Agent Viewport">
+          <div id="viewportPlaceholder" class="flex flex-col items-center justify-center text-gray-600 space-y-2 p-6 text-center">
+            <svg class="w-12 h-12 stroke-current" fill="none" viewBox="0 0 24 24">
+              <rect x="2" y="3" width="20" height="14" rx="2" stroke-width="1.5"></rect>
+              <line x1="8" y1="21" x2="16" y2="21" stroke-width="1.5"></line>
+              <line x1="12" y1="17" x2="12" y2="21" stroke-width="1.5"></line>
+            </svg>
+            <span class="text-xs font-medium">Awaiting interaction screenshot...</span>
+          </div>
+
+          <!-- Click coordinate indicator -->
+          <div id="clickMarker" class="absolute w-6 h-6 -ml-3 -mt-3 rounded-full border-2 border-red-500 bg-red-500/30 pointer-events-none hidden animate-ping"></div>
+        </div>
+
+        <div class="flex items-center justify-between mt-3 px-1 text-xs text-gray-400">
+          <span id="activeUrlText" class="truncate max-w-[280px]">URL: about:blank</span>
+          <button id="captureScreenshotBtn" class="text-indigo-400 hover:text-indigo-300 font-medium transition">
+            📸 Take Screenshot
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick MCP Playground -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-lg">🛠️</span>
+            <h3 class="font-semibold text-sm text-gray-200">Manual MCP Tool Playground</h3>
+          </div>
+          <span class="text-xs text-gray-500">Zero-Auth Contract</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- Navigate Tool -->
+          <div class="flex space-x-2">
+            <input type="text" id="mcpNavInput" placeholder="https://example.com" class="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-indigo-500">
+            <button id="mcpNavBtn" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium border border-gray-700 transition">
+              Navigate
+            </button>
+          </div>
+
+          <!-- Click Tool -->
+          <div class="flex space-x-2">
+            <input type="text" id="mcpClickInput" placeholder="selector or button text" class="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-indigo-500">
+            <button id="mcpClickBtn" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium border border-gray-700 transition">
+              Click
+            </button>
+          </div>
+
+          <!-- Fill Tool -->
+          <div class="flex space-x-2">
+            <input type="text" id="mcpFillTarget" placeholder="input selector" class="w-1/2 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-indigo-500">
+            <input type="text" id="mcpFillVal" placeholder="value" class="w-1/2 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-indigo-500">
+            <button id="mcpFillBtn" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium border border-gray-700 transition">
+              Fill
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- 3. Human-In-The-Loop Approval Modal -->
+  <div id="approvalModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-gray-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
+          ⚠️
+        </div>
+        <div>
+          <h3 class="font-bold text-base text-gray-100">Human Approval Required</h3>
+          <p class="text-xs text-amber-400/90 font-medium">Consequential Action Policy Intercept</p>
+        </div>
+      </div>
+
+      <div class="bg-gray-950 border border-gray-800 rounded-xl p-3.5 space-y-2 text-xs font-mono">
+        <div class="flex justify-between">
+          <span class="text-gray-500">Event ID:</span>
+          <span id="modalEventId" class="text-gray-300">evt_unknown</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Proposed Action:</span>
+          <span id="modalAction" class="text-amber-300 font-semibold">click</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Target:</span>
+          <span id="modalTarget" class="text-gray-200 truncate max-w-[280px]">button#delete</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Action Fingerprint:</span>
+          <span id="modalFingerprint" class="text-gray-400 truncate max-w-[200px]">fp_hash_7719</span>
+        </div>
+      </div>
+
+      <p class="text-xs text-gray-400">
+        This action was classified by TypeSafe PolicyEngine as irreversible or sensitive. Do you authorize OpenMausBot to proceed?
+      </p>
+
+      <div class="flex items-center justify-end space-x-3 pt-2">
+        <button id="modalRejectBtn" class="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-red-400 font-semibold text-xs border border-gray-700 transition">
+          ✕ Reject Action
+        </button>
+        <button id="modalApproveBtn" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition">
+          ✓ Approve & Resume
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client JavaScript Logic -->
+  <script>
+    const state = {
+      activeTaskId: null,
+      eventSource: null,
+      workerOnline: false,
+      inputLocked: false,
+      stepCount: 0,
+      activeApproval: null,
+    };
+
+    // DOM Elements
+    const workerStatusBadge = document.getElementById("workerStatusBadge");
+    const workerStatusText = document.getElementById("workerStatusText");
+    const emergencyStopBtn = document.getElementById("emergencyStopBtn");
+    const emergencyBanner = document.getElementById("emergencyBanner");
+    const resetLockBtn = document.getElementById("resetLockBtn");
+    const runGoalBtn = document.getElementById("runGoalBtn");
+    const goalInput = document.getElementById("goalInput");
+    const modeSelect = document.getElementById("modeSelect");
+    const simulateDemoCheck = document.getElementById("simulateDemoCheck");
+    const activityFeed = document.getElementById("activityFeed");
+    const stepCounter = document.getElementById("stepCounter");
+    const clearLogsBtn = document.getElementById("clearLogsBtn");
+    const viewportImg = document.getElementById("viewportImg");
+    const viewportPlaceholder = document.getElementById("viewportPlaceholder");
+    const viewportEpoch = document.getElementById("viewportEpoch");
+    const activeUrlText = document.getElementById("activeUrlText");
+    const clickMarker = document.getElementById("clickMarker");
+    const approvalModal = document.getElementById("approvalModal");
+    const modalApproveBtn = document.getElementById("modalApproveBtn");
+    const modalRejectBtn = document.getElementById("modalRejectBtn");
+    const modalEventId = document.getElementById("modalEventId");
+    const modalAction = document.getElementById("modalAction");
+    const modalTarget = document.getElementById("modalTarget");
+    const modalFingerprint = document.getElementById("modalFingerprint");
+    const vncLink = document.getElementById("vncLink");
+
+    // Add activity log
+    function appendActivityLog(type, title, detail, mode = null) {
+      if (state.stepCount === 0) activityFeed.innerHTML = "";
+      state.stepCount++;
+      stepCounter.innerText = `${state.stepCount} Steps Executed`;
+
+      const modeColors = {
+        webmcp: "bg-purple-900/40 text-purple-300 border-purple-800/50",
+        browser_dom: "bg-blue-900/40 text-blue-300 border-blue-800/50",
+        visual_grounded: "bg-amber-900/40 text-amber-300 border-amber-800/50",
+      };
+
+      const modeTag = mode ? `<span class="px-1.5 py-0.5 text-[10px] rounded border ${modeColors[mode] || 'bg-gray-800 text-gray-400'} font-semibold">${mode}</span>` : "";
+
+      const item = document.createElement("div");
+      item.className = "p-3 rounded-xl bg-gray-950/80 border border-gray-800/80 space-y-1 transition hover:border-gray-700";
+      item.innerHTML = `
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-2">
+            <span class="text-gray-400 font-bold">#${state.stepCount}</span>
+            <span class="text-gray-200 font-semibold">${title}</span>
+          </div>
+          ${modeTag}
+        </div>
+        ${detail ? `<div class="text-gray-400 text-[11px] leading-relaxed break-all">${detail}</div>` : ""}
+      `;
+      activityFeed.appendChild(item);
+      activityFeed.scrollTop = activityFeed.scrollHeight;
+    }
+
+    // Trigger visual click marker
+    function showClickMarker(x, y) {
+      const container = document.getElementById("viewportContainer");
+      const rect = container.getBoundingClientRect();
+      const posX = (x / 100) * rect.width;
+      const posY = (y / 100) * rect.height;
+
+      clickMarker.style.left = `${posX}px`;
+      clickMarker.style.top = `${posY}px`;
+      clickMarker.classList.remove("hidden");
+
+      setTimeout(() => {
+        clickMarker.classList.add("hidden");
+      }, 1500);
+    }
+
+    // Check Worker Connectivity
+    async function checkWorkerStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        state.workerOnline = data.online;
+
+        if (data.online) {
+          workerStatusBadge.className = "flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/50 text-emerald-300";
+          workerStatusText.innerText = "Worker Online (FastAPI)";
+          if (data.vncUrl) vncLink.href = data.vncUrl;
+        } else {
+          workerStatusBadge.className = "flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-800/50 text-indigo-300";
+          workerStatusText.innerText = "Simulator Ready";
+          simulateDemoCheck.checked = true;
+        }
+      } catch {
+        simulateDemoCheck.checked = true;
+        workerStatusText.innerText = "Simulator Mode";
+      }
+    }
+
+    // Real-Time SSE Stream Subscription
+    function subscribeToStream(taskId) {
+      if (state.eventSource) {
+        state.eventSource.close();
+      }
+
+      const streamUrl = `/api/tasks/${encodeURIComponent(taskId)}/stream`;
+      appendActivityLog("info", "Subscribing to Stream", `Listening to ${streamUrl}`);
+      const es = new EventSource(streamUrl);
+      state.eventSource = es;
+
+      const handleEventData = (data) => {
+        if (!data) return;
+
+        if (data.type === "step_progress") {
+          appendActivityLog("step", `Step ${data.step}: ${data.action || "Executed"}`, data.message || JSON.stringify(data), data.mode);
+        } else if (data.type === "state_change") {
+          appendActivityLog("info", `State Changed: ${data.state}`, data.message || `Task state updated to ${data.state}`);
+        } else if (data.type === "completed") {
+          appendActivityLog("success", "Goal Achieved", data.message || "Task completed successfully", data.mode || "auto");
+          runGoalBtn.disabled = false;
+          runGoalBtn.innerText = "▶ Run Goal";
+          es.close();
+        } else if (data.type === "error" || data.error) {
+          appendActivityLog("error", "Task Error Encountered", data.error || data.message || "Unknown error");
+          runGoalBtn.disabled = false;
+          runGoalBtn.innerText = "▶ Run Goal";
+        }
+      };
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          handleEventData(data);
+        } catch {
+          appendActivityLog("info", "Stream Event", e.data);
+        }
+      };
+
+      es.addEventListener("task_update", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          handleEventData(data);
+        } catch {}
+      });
+
+      es.addEventListener("screenshot", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const src = data.screenshot_data_url || data.dataUrl || data.url;
+          if (src) {
+            viewportImg.src = src;
+            viewportImg.classList.remove("hidden");
+            viewportPlaceholder.classList.add("hidden");
+          }
+          if (data.epoch !== undefined) {
+            viewportEpoch.innerText = `Epoch: ${data.epoch}`;
+          }
+        } catch {}
+      });
+
+      es.addEventListener("approval_required", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          state.activeApproval = { taskId, eventId: data.event_id || data.eventId };
+          modalEventId.innerText = data.event_id || data.eventId || "evt_gated";
+          modalAction.innerText = data.action || "unknown";
+          modalTarget.innerText = data.target || "interactive_element";
+          modalFingerprint.innerText = data.action_fingerprint || "fp_hash_policy";
+          approvalModal.classList.remove("hidden");
+          appendActivityLog("warning", "Gated Consequential Action", `Approval required for action: ${data.action} on ${data.target}`);
+        } catch {}
+      });
+
+      es.addEventListener("emergency_stop", () => {
+        emergencyBanner.classList.remove("hidden");
+        state.inputLocked = true;
+        appendActivityLog("error", "EMERGENCY STOP TRIGGERED", "Locked synthetic inputs via daemon.");
+      });
+
+      es.onerror = () => {
+        appendActivityLog("info", "Stream Disconnected", "Task execution stream finished or closed.");
+        runGoalBtn.disabled = false;
+        runGoalBtn.innerText = "▶ Run Goal";
+        es.close();
+      };
+    }
+
+    // Run Goal Trigger
+    runGoalBtn.addEventListener("click", async () => {
+      const goal = goalInput.value.trim();
+      if (!goal) return alert("Please enter a goal for the agent.");
+
+      runGoalBtn.disabled = true;
+      runGoalBtn.innerText = "Running...";
+      state.stepCount = 0;
+      appendActivityLog("info", "Starting Goal Orchestration", goal, "auto");
+
+      const isSimulation = simulateDemoCheck.checked || !state.workerOnline;
+
+      if (isSimulation) {
+        // Run interactive simulation flow
+        await runSimulationFlow(goal, modeSelect.value);
+        runGoalBtn.disabled = false;
+        runGoalBtn.innerText = "▶ Run Goal";
+      } else {
+        // Real API invocation
+        try {
+          const res = await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              goal,
+              mode: modeSelect.value
+            })
+          });
+          const data = await res.json();
+          state.activeTaskId = data.taskId;
+          appendActivityLog("success", `Task Created: ${data.taskId}`, `Run ID: ${data.runId || "direct"}`);
+          subscribeToStream(data.taskId);
+        } catch (err) {
+          appendActivityLog("error", "Failed to start task", err.message);
+          runGoalBtn.disabled = false;
+          runGoalBtn.innerText = "▶ Run Goal";
+        }
+      }
+    });
+
+    // Preset quick buttons
+    document.querySelectorAll(".preset-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        goalInput.value = btn.dataset.goal;
+      });
+    });
+
+    // Clear Logs
+    clearLogsBtn.addEventListener("click", () => {
+      state.stepCount = 0;
+      stepCounter.innerText = "0 Steps Executed";
+      activityFeed.innerHTML = `<div class="text-gray-500 italic p-4 text-center">Ready to execute. Enter a goal above or pick a preset.</div>`;
+    });
+
+    // Emergency Stop
+    emergencyStopBtn.addEventListener("click", async () => {
+      emergencyBanner.classList.remove("hidden");
+      state.inputLocked = true;
+      appendActivityLog("error", "EMERGENCY STOP TRIGGERED", "Synthetic inputs locked immediately via macOS kernel input lock.");
+
+      const taskId = state.activeTaskId || "global";
+      await fetch(`/api/tasks/${taskId}/emergency-stop`, { method: "POST" }).catch(() => {});
+    });
+
+    // Reset Lock
+    resetLockBtn.addEventListener("click", async () => {
+      emergencyBanner.classList.add("hidden");
+      state.inputLocked = false;
+      appendActivityLog("info", "Lock Released", "Emergency stop reset. Synthetic inputs unlocked.");
+
+      const taskId = state.activeTaskId || "global";
+      await fetch(`/api/tasks/${taskId}/reset`, { method: "POST" }).catch(() => {});
+    });
+
+    // Approval Modal Actions
+    modalApproveBtn.addEventListener("click", async () => {
+      approvalModal.classList.add("hidden");
+      appendActivityLog("success", "Human Approval Granted", "Action authorized by operator. Proceeding...");
+
+      if (state.activeApproval) {
+        const { taskId, eventId } = state.activeApproval;
+        await fetch(`/api/tasks/${encodeURIComponent(taskId)}/approvals/${encodeURIComponent(eventId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approved: true })
+        }).catch(() => {});
+        state.activeApproval = null;
+      }
+    });
+
+    modalRejectBtn.addEventListener("click", async () => {
+      approvalModal.classList.add("hidden");
+      appendActivityLog("error", "Human Approval Rejected", "Action blocked by operator. Task halted safely.");
+
+      if (state.activeApproval) {
+        const { taskId, eventId } = state.activeApproval;
+        await fetch(`/api/tasks/${encodeURIComponent(taskId)}/approvals/${encodeURIComponent(eventId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approved: false })
+        }).catch(() => {});
+        state.activeApproval = null;
+      }
+    });
+
+    // Simulation Workflow for instant zero-friction demonstration
+    async function runSimulationFlow(goal, mode) {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+      // Step 1: Probe WebMCP
+      appendActivityLog("info", "Tier 1: Probing Native WebMCP", "Checking document.modelContext on target page...", "webmcp");
+      await wait(600);
+
+      if (goal.includes("Directory") || goal.includes("Figma") || goal.includes("Filter")) {
+        appendActivityLog("step", "WebMCP Tool Discovered", "Tools: ['search_bookmarks', 'get_bookmark', 'subscribe_newsletter']", "webmcp");
+        await wait(600);
+
+        appendActivityLog("step", "Execute WebMCP: search_bookmarks", "Arguments: {\"query\": \"figma\", \"category\": \"Design\"}", "webmcp");
+        await wait(800);
+
+        viewportImg.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='500' viewBox='0 0 800 500'><rect width='800' height='500' fill='%23111827'/><rect x='40' y='40' width='720' height='60' rx='8' fill='%231f2937'/><text x='60' y='75' fill='%239ca3af' font-family='sans-serif' font-size='16'>9d8 Directory — Results for 'figma' (1 item found)</text><rect x='40' y='120' width='720' height='100' rx='8' fill='%231e1b4b'/><text x='60' y='160' fill='%23818cf8' font-family='sans-serif' font-size='20' font-weight='bold'>Figma</text><text x='60' y='190' fill='%23c7d2fe' font-family='sans-serif' font-size='14'>The collaborative interface design tool</text></svg>";
+        viewportImg.classList.remove("hidden");
+        viewportPlaceholder.classList.add("hidden");
+        activeUrlText.innerText = "URL: http://localhost:3000/directory?q=figma";
+
+        appendActivityLog("success", "Goal Achieved", "Final answer: Found Figma resource under Design category.", "webmcp");
+        return;
+      }
+
+      if (goal.includes("Dynamic Escalation") || goal.includes("stall")) {
+        appendActivityLog("step", "Tier 2: DOM Interaction Attempted", "Click locator: button#tab-filter (turn 1)", "browser_dom");
+        await wait(600);
+        appendActivityLog("step", "DOM Progress Stall Detected", "DOM state unchanged after click. Consecutive stalls: 1", "browser_dom");
+        await wait(600);
+        appendActivityLog("step", "DOM Progress Stall Detected", "DOM state unchanged after repeat. Consecutive stalls: 2", "browser_dom");
+        await wait(600);
+        appendActivityLog("warning", "Dynamic Escalation Triggered", "DOM stalled >= 2 turns. Escalating cleanly to Tier 3: Visual Grounded.", "visual_grounded");
+        await wait(700);
+
+        // Visual perception
+        appendActivityLog("step", "Perception: Screenshot Captured", "Analyzing screenshot via OCR / Vision grounding...", "visual_grounded");
+        await wait(600);
+        showClickMarker(60, 40);
+        appendActivityLog("step", "Visual Mouse Click Executed", "Coordinate [x: 480, y: 320] on 'Developer Tools' tab", "visual_grounded");
+        await wait(600);
+        appendActivityLog("success", "Goal Achieved via Visual Escalation", "Final answer: Successfully switched tab and verified content.", "visual_grounded");
+        return;
+      }
+
+      if (goal.includes("Gated") || goal.includes("consequential") || goal.includes("purchase")) {
+        appendActivityLog("step", "Navigated to Checkout", "Form filled with customer details", "browser_dom");
+        await wait(600);
+        appendActivityLog("warning", "Gated Action Intercepted", "Submitting payment of $120.00 flagged by PolicyEngine as consequential.", "browser_dom");
+
+        // Trigger Approval Modal
+        modalEventId.innerText = "evt_payment_8829";
+        modalAction.innerText = "submit_payment";
+        modalTarget.innerText = "button#checkout-pay";
+        modalFingerprint.innerText = "fp_pay_usd_120_tok881";
+        approvalModal.classList.remove("hidden");
+
+        const approved = await new Promise(resolve => {
+          modalApproveBtn.onclick = () => { approvalModal.classList.add("hidden"); resolve(true); };
+          modalRejectBtn.onclick = () => { approvalModal.classList.add("hidden"); resolve(false); };
+        });
+
+        if (approved) {
+          appendActivityLog("success", "Human Approval Granted", "Action authorized by operator. Proceeding with execution...", "browser_dom");
+          await wait(800);
+          appendActivityLog("success", "Transaction Completed", "SideEffectState: CONFIRMED_SUCCESS. Invoice generated.", "browser_dom");
+        } else {
+          appendActivityLog("error", "Human Approval Rejected", "Action blocked by operator. Task halted safely.", "browser_dom");
+        }
+        return;
+      }
+
+      // Default generic task
+      appendActivityLog("step", "Executing DOM action", "Filling search input with query...", "browser_dom");
+      await wait(600);
+      appendActivityLog("success", "Goal Achieved", "Task completed with SideEffectState.CONFIRMED_SUCCESS", "browser_dom");
+    }
+
+    // Manual MCP Tool Playground Actions
+    document.getElementById("mcpNavBtn").addEventListener("click", async () => {
+      const url = document.getElementById("mcpNavInput").value.trim();
+      if (!url) return;
+      appendActivityLog("step", "MCP Tool: browser_navigate", `Target URL: ${url}`, "browser_dom");
+      activeUrlText.innerText = `URL: ${url}`;
+
+      try {
+        const res = await fetch("/api/mcp/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "browser_navigate", args: { url } })
+        });
+        const result = await res.json();
+        appendActivityLog("success", "Navigation Successful", JSON.stringify(result));
+      } catch (err) {
+        appendActivityLog("error", "Navigation Error", err.message);
+      }
+    });
+
+    document.getElementById("mcpClickBtn").addEventListener("click", async () => {
+      const target = document.getElementById("mcpClickInput").value.trim();
+      if (!target) return;
+      appendActivityLog("step", "MCP Tool: browser_click", `Target Selector: ${target}`, "browser_dom");
+
+      try {
+        const res = await fetch("/api/mcp/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "browser_click", args: { target } })
+        });
+        const result = await res.json();
+        appendActivityLog("success", "Click Executed", JSON.stringify(result));
+      } catch (err) {
+        appendActivityLog("error", "Click Error", err.message);
+      }
+    });
+
+    document.getElementById("mcpFillBtn").addEventListener("click", async () => {
+      const target = document.getElementById("mcpFillTarget").value.trim();
+      const val = document.getElementById("mcpFillVal").value.trim();
+      if (!target) return;
+      appendActivityLog("step", "MCP Tool: browser_fill", `Target: ${target}, Value: "${val}"`, "browser_dom");
+
+      try {
+        const res = await fetch("/api/mcp/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "browser_fill", args: { target, value: val } })
+        });
+        const result = await res.json();
+        appendActivityLog("success", "Fill Executed", JSON.stringify(result));
+      } catch (err) {
+        appendActivityLog("error", "Fill Error", err.message);
+      }
+    });
+
+    document.getElementById("captureScreenshotBtn").addEventListener("click", async () => {
+      appendActivityLog("step", "MCP Tool: browser_screenshot", "Requesting viewport capture...", "visual_grounded");
+      try {
+        const res = await fetch("/api/mcp/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "browser_screenshot", args: {} })
+        });
+        const result = await res.json();
+        const src = result.data?.screenshot_data_url || result.data?.screenshotBase64 || result.screenshotBase64;
+        if (src) {
+          viewportImg.src = src.startsWith("data:") ? src : `data:image/png;base64,${src}`;
+          viewportImg.classList.remove("hidden");
+          viewportPlaceholder.classList.add("hidden");
+          appendActivityLog("success", "Screenshot Captured", "Viewport updated.");
+        } else {
+          appendActivityLog("info", "Screenshot Result", JSON.stringify(result));
+        }
+      } catch (err) {
+        appendActivityLog("error", "Screenshot Failed", err.message);
+      }
+    });
+
+    // Check worker status on load
+    checkWorkerStatus();
+  </script>
+</body>
+</html>
